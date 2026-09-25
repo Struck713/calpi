@@ -9,6 +9,7 @@ from gi.repository import GLib, Gtk
 from calpi import __version__, paths
 from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets_enabled,
                          install_target_checker)
+from calpi.inactivity import DEFAULT_RETURN_SECONDS, InactivityMonitor
 from calpi.tasks import safe_callback
 from calpi.widgets.month_view import MonthView
 from calpi.widgets.util import add_style_provider
@@ -84,12 +85,50 @@ class MainWindow(Gtk.ApplicationWindow):
             install_target_checker(self.navigator)
         self.month_view = MonthView(week_start=0)
         self.navigator.add("calendar", self.month_view)
+        app.clock.subscribe_day_changed(self._on_day_changed)
         self.navigator.show("calendar")
+        self.inactivity = InactivityMonitor(self.hub)
+        self._return_handle = self.inactivity.add_idle_callback(
+            self._return_seconds(), self._on_idle_return)
+        self._wire_return_setting(app)
         if windowed:
             self.set_default_size(1920, 1080)
             self._install_dev_shortcuts()
         else:
             self.fullscreen()
+
+    def _on_day_changed(self, old, new):
+        mv = self.month_view
+        was_current = (mv.year, mv.month) == (old.year, old.month)
+        if was_current and (new.year, new.month) != (old.year, old.month):
+            mv.show_month(new.year, new.month)
+        else:
+            mv.refresh_today()
+            if hasattr(mv, "reload"):
+                mv.reload(force=True)
+        if hasattr(self, "on_data_changed"):
+            self.on_data_changed()
+
+    def _return_seconds(self) -> int:
+        settings = getattr(self.get_application(), "settings", None)
+        if settings is None:
+            return DEFAULT_RETURN_SECONDS
+        from calpi.data.settings_store import K_INACTIVITY_RETURN_SECONDS
+        return settings.get(K_INACTIVITY_RETURN_SECONDS)
+
+    def _wire_return_setting(self, app) -> None:
+        if app.settings is None:
+            return
+        from calpi.data.settings_store import K_INACTIVITY_RETURN_SECONDS
+        app.settings.subscribe(
+            K_INACTIVITY_RETURN_SECONDS,
+            lambda _k, v: self.inactivity.tracker.set_timeout(self._return_handle, v))
+
+    def _on_idle_return(self) -> None:
+        if self.navigator.current in ("calendar", "day"):
+            if self.navigator.current != "calendar":
+                self.navigator.reset("calendar")
+            self.month_view.go_today(reason="inactivity")
 
     def _install_dev_shortcuts(self):
         def _quit(_widget, _args, *_rest):
@@ -109,6 +148,10 @@ class CalpiApp(Gtk.Application):
         self.args = args
         self.window: MainWindow | None = None
         self.settings = None            # SettingsStore, created in _on_activate
+        self.clock = None               # ClockService, created in _on_activate
+        self.credentials = None         # CredentialStore, created in _on_activate (US-13)
+        if not hasattr(self, "startup_notices"):
+            self.startup_notices: list[str] = []
         self.connect("activate", self._on_activate)
 
     def _on_activate(self, _app):
@@ -118,11 +161,19 @@ class CalpiApp(Gtk.Application):
         from calpi.data.settings_store import SettingsStore
         self.settings = SettingsStore()
         log.info("settings loaded from %s", self.settings.path)
+        from calpi.data.credentials import CredentialStore
+        self.credentials = CredentialStore()
+        st = self.credentials.status()
+        log.info("credentials: %s (%d stored)", st, len(self.credentials.ids()) if st == "ok" else 0)
+        if st == "unreadable":
+            self.startup_notices.append("credentials_unreadable")
         Gtk.Settings.get_default().set_property("gtk-enable-animations", False)
         provider = Gtk.CssProvider()
         provider.load_from_path(str(paths.app_dir() / "style.css"))
         add_style_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self._maybe_load_sample_data()
+        from calpi.clock import ClockService
+        self.clock = ClockService()
         self.window = MainWindow(self, self.args.windowed)
         self.window.present()
         log.info("calpi ready version=%s build=%s state_dir=%s renderer=%s",
@@ -165,6 +216,8 @@ def parse_args(argv=None) -> argparse.Namespace:
 def main(argv=None) -> int:
     from calpi.logging_setup import setup_logging
     setup_logging()
+    from calpi.data.credentials import install_log_redaction
+    install_log_redaction()
     args = parse_args(argv)
     paths.set_state_dir_override(args.state_dir)
     app = CalpiApp(args)
