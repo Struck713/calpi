@@ -37,3 +37,18 @@ scopes as `openid`, `email`, `profile`, `drive.appdata`, `drive.file`, `youtube`
 scopes are not on the list. It would also need a Google Cloud project, consent-screen configuration (with testing-mode
 refresh tokens expiring after 7 days) and possibly verification. Decision rule from US-20: Google = ICS secret
 address only. Re-verify the scope list before revisiting.
+
+## Weather (Open-Meteo, US-41)
+
+Checked 2026-09-25 (live request and https://open-meteo.com/en/terms):
+
+- Free API, no key. Non-commercial use only; limits 10,000 calls/day, 5,000/hour, 600/minute (calpi makes about 48
+  forecast calls a day). Data is licensed CC BY 4.0, so **attribution is required**: "Weather data by Open-Meteo.com"
+  is always visible in Settings, Weather.
+- Forecast: `GET https://api.open-meteo.com/v1/forecast?latitude&longitude&current=temperature_2m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=7&timezone=auto&temperature_unit=celsius|fahrenheit`.
+- Geocoding: `GET https://geocoding-api.open-meteo.com/v1/search?name=<q>&count=10&language=en&format=json`
+  (`admin1` = region, `country`).
+- `daily.time` dates are in the location's zone; calpi puts each on the cell with the same calendar date.
+- Privacy: the chosen city's coordinates (and the Pi's IP address) reach Open-Meteo. Weather is off by default.
+- Fixtures in `tests/fixtures/weather/` are real responses (Berlin coordinates; the "Springfield" search).
+- Glyphs: DejaVu Sans has U+2600 U+2601 U+2602 U+2744 U+26A1 U+224B U+263E but NOT U+26C5, so codes 1-2 use the sun.
