@@ -17,6 +17,7 @@ from calpi.data.models import Account
 from calpi.sync import icloud
 from calpi.sync.errors import ErrorCode, SyncError
 from calpi.tasks import run_in_thread
+from calpi.widgets import icloud_guide
 from calpi.widgets.keyboard import make_password_field
 from calpi.widgets.settings.registry import SectionSpec, register_section
 from calpi.widgets.settings.rows import ButtonRow, InfoRow, ListPickerRow, SettingsGroup, SwitchRow
@@ -125,15 +126,20 @@ class SignInFlow:
         self.signin_btn = Gtk.Button(label="Sign in", css_classes=["wide-button"])
         self.signin_btn.connect("clicked", lambda *_: self._submit())
         page.append(self.signin_btn)
-        if self.ctx.mode == "settings":
-            nav = self.ctx.window.navigator
-            if nav.get("icloud_guide") is not None:      # US-33
-                page.append(Gtk.Button(
-                    label="How do I get an app-specific password?", css_classes=["row-button"],
-                    halign=Gtk.Align.START, hexpand=False)) 
-                page.get_last_child().connect("clicked", lambda *_: nav.show("icloud_guide"))
+        if icloud_guide.AVAILABLE:                       # US-33
+            page.append(Gtk.Button(
+                label="How do I get an app-specific password?",
+                css_classes=["row-button"], halign=Gtk.Align.START, hexpand=False))
+            page.get_last_child().connect("clicked", lambda *_: self._open_guide())
         page.connect("unmap", lambda *_: None if self._keep_entries else self._clear_entries())
+        page.connect("map", lambda *_: setattr(self, "_keep_entries", False))
         return page
+
+    def _open_guide(self) -> None:
+        # Keep the typed Apple ID while the guide covers the form; the form's
+        # "map" handler re-arms clearing once Back returns to it.
+        self._keep_entries = True
+        icloud_guide.open_guide(self.ctx)
 
     def _selection_page(self, user, secret, disc) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
@@ -277,6 +283,11 @@ class AccountsSection:
         self.add_btn = Gtk.Button(label="Add account", css_classes=["wide-button"])
         self.add_btn.connect("clicked", lambda *_: self.add_account())
         self.widget.append(self.add_btn)
+        if icloud_guide.AVAILABLE:                       # US-33
+            self.help_btn = Gtk.Button(label="Help with iCloud sign-in",
+                                       css_classes=["wide-button"])
+            self.help_btn.connect("clicked", lambda *_: icloud_guide.open_guide(self.ctx))
+            self.widget.append(self.help_btn)
         self._shown = None
         self._refresh()
 
@@ -318,11 +329,16 @@ class AccountsSection:
         g.add(InfoRow("Status", status_text(app, acc)))
         page.append(g)
         g2 = SettingsGroup()
+        g2.add(ButtonRow("Calendars", "Customize", lambda: self._open_calendars(),
+                         description="Show, hide, rename and recolor this account's calendars."))
         g2.add(ButtonRow("Update password", "Update", lambda: self._update(acc),
                          description="Use this if the app-specific password stopped working."))
         g2.add(ButtonRow("Remove account", "Remove", lambda: self._remove(acc), destructive=True))
         page.append(g2)
         self.ctx.push_page(page, acc.display_name)
+
+    def _open_calendars(self) -> None:
+        self.ctx.window.navigator.show("settings", section="calendars")    # US-26
 
     def _update(self, acc: Account) -> None:
         def finished(_a):
