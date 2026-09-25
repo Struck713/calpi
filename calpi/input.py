@@ -204,6 +204,10 @@ class KeyRouter:
 
     def _on_key(self, _ctl, keyval, _keycode, state) -> bool:
         from gi.repository import Gdk, Gtk
+        kb = getattr(self._window, "keyboard", None)
+        if kb is not None and kb.is_shown() and Gdk.keyval_name(keyval) == "Escape":
+            kb.hide()                    # Escape hides the on-screen keyboard first (US-21)
+            return True
         focus = self._window.get_focus()
         if isinstance(focus, Gtk.Editable) and Gdk.keyval_name(keyval) != "Escape":
             return False

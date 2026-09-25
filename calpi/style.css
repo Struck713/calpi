@@ -40,3 +40,14 @@ button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outl
 .nav-arrow  { font-size: 44px; padding: 0 12px; }
 .nav-button:active { background-color: @accent; color: @bg; }
 .nav-button:disabled { opacity: 0.3; }
+
+/* --- US-21 on-screen keyboard --- */
+.osk-dock { background-color: #0b0f13; border-top: 2px solid alpha(@text, 0.12); padding: 12px 16px 16px 16px; }
+.osk-key  { min-height: 80px; min-width: 110px; margin: 4px 5px; border-radius: 12px; font-size: 34px;
+            background: #26303a; background-image: none; color: @text; border: none; box-shadow: none; padding: 0; }
+.osk-key:active   { background: @accent; color: @bg; }
+.osk-special      { background: #1b232b; font-size: 26px; }
+.osk-shift.on     { background: #3a4a5a; }
+.osk-shift.lock   { background: @accent; color: @bg; }
+.osk-done         { background: @accent; color: @bg; font-weight: bold; }
+.osk-entry        { min-height: 72px; font-size: 32px; }

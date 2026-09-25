@@ -14,6 +14,7 @@ from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets
                          install_target_checker)
 from calpi.inactivity import DEFAULT_RETURN_SECONDS, InactivityMonitor
 from calpi.tasks import safe_callback
+from calpi.widgets.keyboard import KeyboardDock
 from calpi.widgets.month_view import MonthView
 from calpi.widgets.util import add_style_provider
 
@@ -84,12 +85,17 @@ class MainWindow(Gtk.ApplicationWindow):
         self.hub = WindowEventHub(self)                 # the single capture controller (US-11)
         self.cursor = CursorManager(self, self.hub)
         self.keys = KeyRouter(self, self.navigator)
+        self.keyboard = KeyboardDock(self)             # US-21: one on-screen keyboard dock
         if check_targets_enabled():
             install_target_checker(self.navigator)
         self.month_view = MonthView(week_start=0)
         self.navigator.add("calendar", self.month_view)
         app.clock.subscribe_day_changed(self._on_day_changed)
         self.navigator.show("calendar")
+        if os.environ.get("CALPI_DEV_OSK") == "1":     # dev only (US-21)
+            from calpi.widgets.dev_osk_demo import DevOskDemo
+            self.navigator.add("dev_osk", DevOskDemo(self))
+            self.navigator.show("dev_osk")
         self.inactivity = InactivityMonitor(self.hub)
         self._return_handle = self.inactivity.add_idle_callback(
             self._return_seconds(), self._on_idle_return)
