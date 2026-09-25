@@ -1,7 +1,9 @@
 [Unit]
 Description=calpi kiosk (cage + GTK app) on tty1
-After=systemd-user-sessions.service plymouth-quit-wait.service network-online.target
-Wants=network-online.target dbus.socket systemd-logind.service
+# Deliberately NOT waiting for network-online.target (US-01 D3): the calendar
+# must appear immediately at boot, even offline.
+After=systemd-user-sessions.service plymouth-quit-wait.service
+Wants=dbus.socket systemd-logind.service
 After=dbus.socket systemd-logind.service
 Conflicts=getty@tty1.service
 After=getty@tty1.service
@@ -19,6 +21,12 @@ ExecStart=/usr/bin/cage -d -- /usr/bin/python3 /opt/calpi/run.py
 Environment=GSK_RENDERER=cairo
 Environment=GTK_A11Y=none
 Environment=PYTHONUNBUFFERED=1
+# Persistent app state: /var/lib/calpi, owned by kiosk, exported as $STATE_DIRECTORY
+StateDirectory=calpi
+StateDirectoryMode=0700
+# tmpfs scratch that survives service restarts but not reboots (US-12 crash counter)
+RuntimeDirectory=calpi
+RuntimeDirectoryPreserve=yes
 Restart=always
 RestartSec=3
 

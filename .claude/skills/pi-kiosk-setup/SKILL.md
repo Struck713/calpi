@@ -44,8 +44,19 @@ Run the bundled script on the Pi as root: [setup-pi.sh](setup-pi.sh). It is idem
 Copy it over and run:
 ```bash
 scp .claude/skills/pi-kiosk-setup/{setup-pi.sh,calpi-kiosk.service,pam-calpi-kiosk} calpi:/tmp/
-ssh calpi 'sudo bash /tmp/setup-pi.sh'
+ssh calpi 'sudo WIFI_COUNTRY=<CC> bash /tmp/setup-pi.sh'
 ```
+
+Environment variables for the script:
+- `WIFI_COUNTRY` (e.g. `US`): sets the Wi-Fi regulatory country and unblocks rfkill. Without a country Wi-Fi stays soft-blocked.
+- `LEAN=1`: disables `bluetooth`, `hciuart`, `triggerhappy` (never `avahi-daemon`, which `calpi.local` needs).
+- `DISABLE_BT=1`: adds `dtoverlay=disable-bt` to `config.txt`.
+- `MODE`, `GTK_VERSION`: resolution string and GTK major version.
+
+Unit notes:
+- The unit does **not** wait for `network-online.target`: that made boot wait 30 s+ with no network. The app handles being offline itself.
+- `StateDirectory=calpi` creates `/var/lib/calpi` (kiosk, 0700) and exports `$STATE_DIRECTORY`. `RuntimeDirectory=calpi` + `RuntimeDirectoryPreserve=yes` gives `/run/calpi` (tmpfs), kept across service restarts and cleared at reboot. cage passes the environment on to the app.
+- Recorded device facts live in `docs/platform-versions.md`.
 
 ## Display / resolution
 
