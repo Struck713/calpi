@@ -207,3 +207,12 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .wizard-button    { min-width: 200px; min-height: 88px; font-size: 30px; border-radius: 16px; }
 .wizard-button.suggested { background-image: none; background-color: @accent; color: @bg; }
 .wizard .settings-content, .wizard .settings-subpage { padding: 16px 48px; }
+
+/* US-31 status section */
+.verdict { padding: 20px 24px; margin-bottom: 32px; border-radius: 16px; background-color: @surface; border-left: 12px solid @text_faint; }
+.verdict-ok   { border-left-color: #4caf50; }
+.verdict-warn { border-left-color: #e0a040; }
+.verdict-bad  { border-left-color: @danger; }
+.verdict-text { font-size: 40px; }
+.status-detail { font-size: 20px; color: @text_dim; margin-top: 6px; margin-bottom: 6px; }
+.status-warn { color: #e0a040; }

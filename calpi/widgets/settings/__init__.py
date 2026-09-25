@@ -20,6 +20,7 @@ SECTION_MODULES = [
     "sync",        # US-27
     "preferences",
     "weather",     # US-41
+    "status",      # US-31
     # US-23 network, US-25 accounts, US-26 calendars, US-27 sync, US-29 display,
     # US-28 preferences, US-31 status: append here when implemented.
 ]

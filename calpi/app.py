@@ -424,6 +424,9 @@ class CalpiApp(Gtk.Application):
         self.sync.result_callbacks.append(self._track_manual_result)    # US-19 cooldown
         indicator = SyncIndicator(self.sync, self.clock, provider_names=self._provider_names)
         self.window.month_view.header.end_slot.prepend(indicator)
+        tap = Gtk.GestureClick()                                        # US-31: tap the text -> Status
+        tap.connect("released", lambda *_: self.window.navigator.show("settings", section="status"))
+        indicator.add_controller(tap)
         self.refresh_button = RefreshButton(self)                       # US-19: right after the indicator
         self.window.month_view.header.end_slot.insert_child_after(self.refresh_button, indicator)
         self._setup_network(indicator)
