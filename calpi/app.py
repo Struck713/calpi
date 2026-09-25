@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import logging
 import os
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import GLib, Gtk
 
 from calpi import __version__, paths
+from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets_enabled,
+                         install_target_checker)
 from calpi.tasks import safe_callback
-from calpi.widgets.util import add_style_provider, set_text_if_changed
+from calpi.widgets.month_view import MonthView
+from calpi.widgets.util import add_style_provider
 
 log = logging.getLogger("calpi.app")
+
+
+def _build_stamp() -> str:
+    """Contents of calpi/BUILD (written by scripts/pi deploy), or 'dev'."""
+    try:
+        return (paths.app_dir() / "BUILD").read_text().strip() or "dev"
+    except OSError:
+        return "dev"
 
 
 class Navigator:
@@ -59,45 +69,21 @@ class Navigator:
         self.show(name)
 
 
-class PlaceholderScreen(Gtk.Box):
-    """Temporary first screen; US-06 replaces it with MonthView."""
-
-    def __init__(self):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER,
-                         spacing=12, css_classes=["screen"])
-        self.title = Gtk.Label(label="calpi", css_classes=["placeholder-title"])
-        self.clock = Gtk.Label(css_classes=["placeholder-sub"])
-        self.append(self.title)
-        self.append(self.clock)
-        self._tick()
-        self._schedule_next_minute()
-
-    def _schedule_next_minute(self):
-        now = dt.datetime.now()
-        delay_ms = (60 - now.second) * 1000 - now.microsecond // 1000 + 50
-        GLib.timeout_add(delay_ms, self._on_minute)
-
-    @safe_callback(repeat=False)
-    def _on_minute(self):
-        try:
-            self._tick()
-        finally:
-            self._schedule_next_minute()     # always reschedule, even if _tick failed
-
-    def _tick(self):
-        set_text_if_changed(self.clock, dt.datetime.now().strftime("%A %d %B · %H:%M"))
-
-
 class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, app: "CalpiApp", windowed: bool):
         super().__init__(application=app, title="calpi")
-        self.set_cursor(Gdk.Cursor.new_from_name("none", None))   # US-11 refines this
         self.overlay = Gtk.Overlay()
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE, hexpand=True, vexpand=True)
         self.overlay.set_child(self.stack)
         self.set_child(self.overlay)
         self.navigator = Navigator(self.stack)
-        self.navigator.add("calendar", PlaceholderScreen())
+        self.hub = WindowEventHub(self)                 # the single capture controller (US-11)
+        self.cursor = CursorManager(self, self.hub)
+        self.keys = KeyRouter(self, self.navigator)
+        if check_targets_enabled():
+            install_target_checker(self.navigator)
+        self.month_view = MonthView(week_start=0)
+        self.navigator.add("calendar", self.month_view)
         self.navigator.show("calendar")
         if windowed:
             self.set_default_size(1920, 1080)
@@ -122,20 +108,25 @@ class CalpiApp(Gtk.Application):
         super().__init__(application_id="dev.calpi.Kiosk")
         self.args = args
         self.window: MainWindow | None = None
+        self.settings = None            # SettingsStore, created in _on_activate
         self.connect("activate", self._on_activate)
 
     def _on_activate(self, _app):
         if self.window is not None:          # activate can fire twice; keep one window
             self.window.present()
             return
+        from calpi.data.settings_store import SettingsStore
+        self.settings = SettingsStore()
+        log.info("settings loaded from %s", self.settings.path)
         Gtk.Settings.get_default().set_property("gtk-enable-animations", False)
         provider = Gtk.CssProvider()
         provider.load_from_path(str(paths.app_dir() / "style.css"))
         add_style_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.window = MainWindow(self, self.args.windowed)
         self.window.present()
-        log.info("calpi ready version=%s state_dir=%s renderer=%s",
-                 __version__, paths.state_dir(), os.environ.get("GSK_RENDERER"))
+        log.info("calpi ready version=%s build=%s state_dir=%s renderer=%s",
+                 __version__, _build_stamp(), paths.state_dir(),
+                 os.environ.get("GSK_RENDERER"))
         if self.args.exit_after:
             GLib.timeout_add_seconds(self.args.exit_after, self._exit_for_test)
 

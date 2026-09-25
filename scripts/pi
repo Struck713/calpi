@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# calpi device helper. Usage: scripts/pi <command> [args]
+#   deploy [--no-restart]   sync runtime files, precompile, restart, wait for "calpi ready"
+#   restart                 restart the kiosk service and wait for readiness
+#   logs [-f] [-n N]        journal for this boot
+#   status                  service status + running build
+#   screenshot [file.png]   capture the live HDMI output (default ./scratch-screenshot.png)
+#   health                  throttling, temperature, memory, app RSS/CPU, disk
+#   deps [--update]         install deps/apt-runtime.txt on the Pi (never upgrades)
+#   rollback                restore the previous deploy
+#   ssh [cmd...]            ssh to the Pi
+# Env: CALPI_HOST (default "calpi"; fallback "calpi.local"), CALPI_USER, CALPI_WAYLAND_DISPLAY.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HOST="${CALPI_HOST:-calpi}"
+[[ -n "${CALPI_USER:-}" ]] && HOST="${CALPI_USER}@${HOST}"
+APP_DIR=/opt/calpi
+SERVICE=calpi-kiosk
+WAYLAND="${CALPI_WAYLAND_DISPLAY:-wayland-0}"   # see docs/platform-versions.md
+READY_TIMEOUT=45
+
+die() { echo "error: $*" >&2; exit 1; }
+remote() { ssh -o ConnectTimeout=5 -o BatchMode=yes "$HOST" "$@"; }
+check_conn() { remote true 2>/dev/null || die "cannot reach $HOST (set CALPI_HOST, check ssh config)"; }
+
+# Restart the service and wait for a "calpi ready" line logged after the restart.
+restart_and_wait() {
+  local cursor
+  echo "==> restarting $SERVICE (this interrupts whatever the screen is showing)"
+  cursor=$(remote "journalctl -u $SERVICE -n 0 --show-cursor --no-pager 2>/dev/null | sed -n 's/^-- cursor: //p'") || cursor=""
+  remote "sudo systemctl restart $SERVICE"
+  if remote "c='$cursor'; a=''; [ -n \"\$c\" ] && a=\"--after-cursor=\$c\"
+             for i in \$(seq 1 $READY_TIMEOUT); do
+               journalctl -u $SERVICE \$a -o cat --no-pager 2>/dev/null | grep -q 'calpi ready' && exit 0
+               sleep 1
+             done; exit 1"; then
+    return 0
+  fi
+  echo "error: no 'calpi ready' within ${READY_TIMEOUT}s" >&2
+  remote "journalctl -u $SERVICE -b --no-pager -n 80" || true
+  return 1
+}
+
+ready_ok() {
+  remote "journalctl -u $SERVICE -b --no-pager -n 30"
+}
+
+cmd_deploy() {
+  local restart=1
+  [[ "${1:-}" == "--no-restart" ]] && restart=0
+  check_conn
+  [[ -n "$APP_DIR" ]] || die "APP_DIR empty"
+  echo "==> snapshot for rollback ($APP_DIR.prev)"
+  remote "sudo mkdir -p $APP_DIR && sudo rsync -a --delete $APP_DIR/ $APP_DIR.prev/"
+  echo "==> syncing run.py + calpi/ -> $HOST:$APP_DIR"
+  (cd "$ROOT" && rsync -az --delete --rsync-path="sudo rsync" \
+    --exclude '__pycache__' --exclude '*.pyc' --exclude '.devstate' --exclude 'BUILD' \
+    run.py calpi "$HOST:$APP_DIR/")
+  local sha build
+  sha=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)
+  if [[ $sha != nogit ]] && ! git -C "$ROOT" diff --quiet HEAD 2>/dev/null; then sha="$sha-dirty"; fi
+  build="$(date -u +%Y%m%dT%H%M%SZ) $sha $(hostname)"
+  echo "$build" | remote "sudo tee $APP_DIR/calpi/BUILD >/dev/null"
+  # Remove stray top-level files (e.g. left by the old whole-repo deploy.sh).
+  remote "cd $APP_DIR && sudo find . -mindepth 1 -maxdepth 1 ! -name run.py ! -name calpi -exec rm -rf {} +"
+  remote "sudo chown -R root:root $APP_DIR && sudo chmod -R a+rX,go-w $APP_DIR && sudo /usr/bin/python3 -m compileall -q -j 0 $APP_DIR"
+  if (( restart )); then
+    restart_and_wait || exit 1
+    ready_ok
+    echo "DEPLOY OK $build"
+  else
+    echo "DEPLOY OK (not restarted) $build"
+  fi
+}
+
+cmd_logs() {
+  local n=100 follow=""
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -f) follow=-f ;;
+      -n) [[ $# -ge 2 && $2 =~ ^[0-9]+$ ]] || die "-n needs a number"; n=$2; shift ;;
+      *) die "logs: unknown option $1" ;;
+    esac
+    shift
+  done
+  remote "journalctl -u $SERVICE -b --no-pager -n $n $follow"
+}
+
+cmd_status() {
+  remote "systemctl status $SERVICE --no-pager -l | head -20; echo; echo -n 'build: '; cat $APP_DIR/calpi/BUILD 2>/dev/null || echo unknown
+          pid=\$(pgrep -f $APP_DIR/run.py | head -1)
+          if [ -n \"\$pid\" ]; then ps -o etime=,rss=,pcpu= -p \$pid | awk '{printf \"app uptime %s, rss %.0f MB, cpu %s%%\\n\", \$1, \$2/1024, \$3}'; else echo 'app not running'; fi"
+}
+
+cmd_health() {
+  local out
+  out=$(remote "vcgencmd get_throttled; vcgencmd measure_temp; uptime; free -m; df -h / | tail -1
+                pid=\$(pgrep -f $APP_DIR/run.py | head -1)
+                if [ -n \"\$pid\" ]; then ps -o pid,rss,pcpu,etime,cmd -p \$pid; else echo 'app not running'; fi
+                ps -o pid,rss,pcpu,etime,cmd -C cage || true")
+  echo "$out"
+  if ! grep -q 'throttled=0x0$' <<<"$out"; then
+    echo "WARNING: throttling/under-voltage detected — check the power supply before chasing performance problems"
+  fi
+}
+
+cmd_screenshot() {
+  local out="${1:-$ROOT/scratch-screenshot.png}"
+  check_conn
+  remote "sudo -u kiosk env XDG_RUNTIME_DIR=/run/user/\$(id -u kiosk) WAYLAND_DISPLAY=$WAYLAND grim -t png /tmp/calpi-shot.png && sudo chmod a+r /tmp/calpi-shot.png"
+  scp -q -o BatchMode=yes "$HOST:/tmp/calpi-shot.png" "$out"
+  remote "sudo rm -f /tmp/calpi-shot.png"
+  echo "saved $out ($(file -b "$out" | cut -d, -f2 | xargs))"
+  echo "(scratch file: delete it when done; never commit screenshots)"
+}
+
+cmd_deps() {
+  local update=0
+  [[ "${1:-}" == "--update" ]] && update=1
+  check_conn
+  local pkgs
+  pkgs=$(sed 's/#.*//' "$ROOT/deps/apt-runtime.txt" | xargs)
+  (( update )) && remote "sudo apt-get update"
+  remote "missing=\$(for p in $pkgs; do dpkg -s \$p >/dev/null 2>&1 || echo \$p; done | xargs)
+          if [ -z \"\$missing\" ]; then echo 'all runtime deps present'; exit 0; fi
+          echo \"installing: \$missing\"
+          sudo apt-get install -y --no-install-recommends \$missing || { sudo apt-get update && sudo apt-get install -y --no-install-recommends \$missing; }
+          echo \"newly installed: \$missing\""
+}
+
+cmd_rollback() {
+  check_conn
+  remote "test -d $APP_DIR.prev || { echo 'no previous deploy'; exit 1; }
+          sudo mv $APP_DIR $APP_DIR.rollback-tmp && sudo mv $APP_DIR.prev $APP_DIR && sudo mv $APP_DIR.rollback-tmp $APP_DIR.prev"
+  restart_and_wait || exit 1
+  ready_ok
+  echo "ROLLBACK OK ($(remote "cat $APP_DIR/calpi/BUILD 2>/dev/null" || echo unknown))"
+}
+
+cmd="${1:-}"; [[ $# -gt 0 ]] && shift
+case "$cmd" in
+  deploy)     cmd_deploy "$@" ;;
+  restart)    check_conn; restart_and_wait && ready_ok ;;
+  logs)       cmd_logs "$@" ;;
+  status)     cmd_status ;;
+  screenshot) cmd_screenshot "$@" ;;
+  health)     cmd_health ;;
+  deps)       cmd_deps "$@" ;;
+  rollback)   cmd_rollback ;;
+  ssh)        exec ssh "$HOST" "$@" ;;
+  *)          sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; [[ -z "$cmd" || $cmd == -h || $cmd == --help ]] || exit 2 ;;
+esac
