@@ -18,6 +18,8 @@ SCRIPT = textwrap.dedent('''
     from calpi.sync import icloud
     from calpi.sync.errors import SyncError, ErrorCode
     from calpi.widgets.settings import accounts as ui
+    from calpi import paths
+    paths.set_state_dir_override(sys.argv[1])       # parse_args alone does not; never touch real state
     a = appmod.CalpiApp(appmod.parse_args(["--windowed", "--state-dir", sys.argv[1]]))
     MODE = {"err": None}
     def fake(user, secret, client=None):
@@ -85,9 +87,10 @@ SCRIPT = textwrap.dedent('''
 @pytest.mark.gtk
 def test_signin_flow():
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":6")
-    subprocess.run("pgrep -f 'gtk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 1)",
+    subprocess.run("pgrep -f '[g]tk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 1)",
                    shell=True)
     with tempfile.TemporaryDirectory() as d:
+        env["RUNTIME_DIRECTORY"] = os.path.join(d, "run")     # own crash counter and sync lock
         r = subprocess.run(["timeout", "60", "/usr/bin/python3", "-c", SCRIPT, d], env=env,
                            capture_output=True, text=True, cwd=ROOT)
     assert "OK" in r.stdout, r.stdout + r.stderr

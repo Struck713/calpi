@@ -155,6 +155,50 @@ def _dry_run(acc, secret, client, window, tz) -> int:
     return 0
 
 
+def _status(settings, state) -> int:
+    from calpi.data import db, sync_status, timeutil
+    from calpi.data.settings_store import K_TIMEZONE, REGISTRY
+
+    if K_TIMEZONE in REGISTRY:
+        timeutil.set_display_tz(settings.get(K_TIMEZONE))
+    tz = timeutil.display_tz()
+
+    def t(dt, full=True):
+        return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M" if full else "%H:%M") if dt else "never"
+
+    conn = db.connect(Path(state) / db.DB_NAME if state else None)
+    try:
+        snap = sync_status.snapshot(conn)
+    finally:
+        conn.close()
+    names = {a.id: a.username for a in list_accounts(settings)}
+    for a in snap.accounts:
+        err = f'  {a.last_error_code} "{a.last_error_detail}"' if a.last_error_code else ""
+        print(f"ACCOUNT {a.account_id}  {names.get(a.account_id, '?')}  last ok {t(a.last_success_at)}"
+              f"  failures {a.consecutive_failures}{err}")
+        for c in snap.calendars_of(a.account_id):
+            line = f"  {c.name:<20} {c.last_status or '-':<10}"
+            if c.last_status == "error":
+                line += f" {c.last_error_code}{' (inherited)' if c.inherited else ''}"
+            elif c.last_event_count is not None:
+                line += f" {c.last_event_count} events"
+            line += f"   last ok {t(c.last_success_at)}"
+            if c.last_duration_ms is not None and c.last_status == "ok":
+                line += f"   ({c.last_duration_ms / 1000:.1f} s)"
+            if c.consecutive_failures:
+                line += f"   failures {c.consecutive_failures}"
+            if c.last_status == "error" and c.last_error_detail and not c.inherited:
+                line += f'   "{c.last_error_detail}"'
+            print(line)
+    if not snap.accounts:
+        print("no sync status recorded yet")
+    if snap.runs:
+        print("Last runs: " + " | ".join(
+            f"{t(r.started_at, False)} {r.reason} {'changed ' if r.changed else ''}"
+            f"{(r.duration_ms or 0) / 1000:.1f} s" for r in snap.runs[:8]))
+    return 0
+
+
 def main(argv=None, settings: SettingsStore | None = None,
          credentials: CredentialStore | None = None, client: HttpClient | None = None) -> int:
     ap = argparse.ArgumentParser(prog="calpi.sync.cli", description=__doc__,
@@ -172,6 +216,7 @@ def main(argv=None, settings: SettingsStore | None = None,
         p.add_argument("--password-env", metavar="VAR", help="DEV ONLY: read the password from this env var")
         p.add_argument("--dump-dir", help="DEV ONLY: save raw response bodies here (anonymise before sharing)")
     sub.add_parser("list-accounts")
+    sub.add_parser("status", help="print the persisted sync status (US-18)")
     f = sub.add_parser("fetch", help="download and store events (or --dry-run to print them)")
     f.add_argument("--account", required=True)
     f.add_argument("--force", action="store_true", help="ignore ctags")
@@ -199,6 +244,8 @@ def main(argv=None, settings: SettingsStore | None = None,
             ok = remove_account(settings, credentials, args.id)
             print("removed" if ok else "no such account")
             return 0 if ok else 1
+        if args.cmd == "status":
+            return _status(settings, state)
         if args.cmd == "fetch":
             return _fetch(args, settings, credentials, state, client)
         from calpi.sync import providers

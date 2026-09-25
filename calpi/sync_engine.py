@@ -340,6 +340,8 @@ class SyncEngine:
         launcher = Gio.SubprocessLauncher.new(Gio.SubprocessFlags.STDOUT_PIPE)   # stderr inherited -> journal
         launcher.set_cwd(str(paths.app_dir().parent))
         launcher.unsetenv("NOTIFY_SOCKET")                  # D1: the worker must never ping the watchdog
+        if paths._override is not None:                     # --state-dir: the worker must use it too
+            launcher.setenv("STATE_DIRECTORY", str(paths._override), True)
         proc = launcher.spawnv(build_argv(req))
 
         def cb(p, res, _data=None):

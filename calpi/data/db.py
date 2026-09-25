@@ -31,12 +31,16 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
 
 
 @contextmanager
-def write_txn(conn: sqlite3.Connection):
-    """BEGIN IMMEDIATE ... COMMIT, bumping meta.revision inside the transaction."""
+def write_txn(conn: sqlite3.Connection, bump_revision: bool = True):
+    """BEGIN IMMEDIATE ... COMMIT, bumping meta.revision inside the transaction.
+
+    Bookkeeping writes that don't change events (sync status, US-18) pass bump_revision=False.
+    """
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
-        conn.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'revision'")
+        if bump_revision:
+            conn.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'revision'")
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
@@ -98,7 +102,42 @@ def _v1(conn: sqlite3.Connection) -> None:
 
 
 # Append-only: index 0 is schema version 1.
-MIGRATIONS = [_v1]
+def _v2(conn: sqlite3.Connection) -> None:
+    """US-18: sync status tables (no semicolons inside comments: exec_many splits on them)."""
+    exec_many(conn, """
+    CREATE TABLE account_sync_status(
+        account_id           TEXT PRIMARY KEY,
+        last_attempt_at      INTEGER,
+        last_success_at      INTEGER,
+        last_error_code      TEXT,
+        last_error_detail    TEXT,
+        last_error_at        INTEGER,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE calendar_sync_status(
+        calendar_id          TEXT PRIMARY KEY REFERENCES calendars(id) ON DELETE CASCADE,
+        last_attempt_at      INTEGER,
+        last_success_at      INTEGER,
+        last_status          TEXT,
+        last_error_code      TEXT,
+        last_error_detail    TEXT,
+        last_error_at        INTEGER,
+        inherited            INTEGER NOT NULL DEFAULT 0,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        last_event_count     INTEGER,
+        last_duration_ms     INTEGER,
+        last_parse_errors    INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE sync_runs(
+        id INTEGER PRIMARY KEY,
+        started_at INTEGER NOT NULL, finished_at INTEGER NOT NULL,
+        reason TEXT, status TEXT, duration_ms INTEGER,
+        accounts_ok INTEGER, accounts_failed INTEGER, changed INTEGER
+    )
+    """)
+
+
+MIGRATIONS = [_v1, _v2]
 
 
 def migrate(conn: sqlite3.Connection) -> None:

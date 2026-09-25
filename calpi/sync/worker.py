@@ -86,6 +86,39 @@ def _parse_range(s: str | None) -> tuple[date, date] | None:
     return date.fromisoformat(a), date.fromisoformat(b)
 
 
+def _record_status(store, acc: dict, now: int) -> None:
+    """US-18: persist one account's outcome (own small transactions; never fails the sync)."""
+    from calpi.data import sync_status
+    conn, aid = store.conn, acc["account_id"]
+    try:
+        if acc.get("error"):
+            sync_status.record_account(conn, aid, at=now, error=acc["error"], detail=acc.get("detail", ""))
+            for cal in store.calendars_for_account(aid):
+                sync_status.record_calendar(conn, cal.id, at=now, status="error", error=acc["error"],
+                                            detail=acc.get("detail", ""), inherited=True)
+            return
+        sync_status.record_account(conn, aid, at=now)
+        for c in acc.get("calendars", []):
+            sync_status.record_calendar(
+                conn, c["calendar_id"], at=now, status=c["status"], error=c.get("error"),
+                detail=c.get("detail", ""), events=None if c["status"] == "unchanged" else c.get("events"),
+                duration_ms=c.get("duration_ms"), parse_errors=c.get("parse_errors", 0))
+    except sqlite3.Error as e:
+        log.warning("could not record sync status for %s: %s", aid, e)
+
+
+def _record_run(store, out: list, reason: str, started: datetime, duration_ms: int, changed: bool) -> None:
+    from calpi.data import sync_status
+    failed = sum(1 for a in out if a.get("error") or any(c.get("error") for c in a.get("calendars", [])))
+    try:
+        sync_status.record_run(store.conn, started_at=int(started.timestamp()),
+                               finished_at=int(time.time()), reason=reason, status="done",
+                               duration_ms=duration_ms, ok=len(out) - failed, failed=failed,
+                               changed=changed)
+    except sqlite3.Error as e:
+        log.warning("could not record sync run: %s", e)
+
+
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="calpi.sync.worker")
     p.add_argument("--reason", default="manual")
@@ -113,10 +146,13 @@ def run(args, deps: Deps) -> dict:
             secret = None if unreadable else creds.get(acc.id)
             if secret is None:                                     # D5: no network call
                 out.append(_account_error(acc.id, "CREDENTIALS_UNREADABLE", "no readable credentials"))
+                _record_status(store, out[-1], int(time.time()))
                 continue
             out.append(_serialize(sync_account(acc, secret, store, window, force=args.force,
                                                client=deps.client(acc), tz=tz)))
+            _record_status(store, out[-1], int(time.time()))
         rev1 = store.revision()
+        _record_run(store, out, args.reason, started, int((time.monotonic() - t0) * 1000), rev1 != rev0)
     finally:
         store.close()
     return {"v": 1, "status": "done", "reason": args.reason, "started": _utc(started),

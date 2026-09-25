@@ -267,6 +267,8 @@ class CalpiApp(Gtk.Application):
         self.dimming = None             # DimController, created with the window (US-30)
         self.safe_mode = False          # US-12: crash loop detected; extras/auto-sync must check it
         self.sync = None                # SyncEngine, created in _on_activate (US-16)
+        self.sync_status = None         # StatusSnapshot (US-18), refreshed after every sync result
+        self.status_callbacks: list = []    # US-18: called with the new snapshot
         self.network = None             # NetworkMonitor (US-17)
         self.clock_trust = None         # ClockTrust (US-17)
         self.weather = None             # WeatherService, created in _on_activate (US-41)
@@ -412,7 +414,9 @@ class CalpiApp(Gtk.Application):
         from calpi.sync_engine import SyncEngine
         from calpi.widgets.sync_indicator import SyncIndicator
         self.sync = SyncEngine(self)
+        self._refresh_status()                                          # US-18: at startup
         self.sync.result_callbacks.append(self.reconcile_accounts)      # US-25 D5
+        self.sync.result_callbacks.append(lambda _r: self._refresh_status())   # US-18
         indicator = SyncIndicator(self.sync, self.clock)
         self.window.month_view.header.end_slot.prepend(indicator)
         self._setup_network(indicator)
@@ -450,6 +454,30 @@ class CalpiApp(Gtk.Application):
         """After a sync (or anything that changed stored data): reload what is showing."""
         if self.window is not None:
             self.window.on_data_changed()
+
+    def _refresh_status(self) -> None:
+        """US-18: re-read the persistent sync status and tell the subscribers."""
+        from calpi.data import sync_status
+        try:
+            self.sync_status = sync_status.snapshot(self.store.conn)
+        except Exception:
+            log.exception("reading sync status failed")
+            return
+        for cb in list(self.status_callbacks):
+            try:
+                cb(self.sync_status)
+            except Exception:
+                log.exception("status callback failed")
+
+    def account_status_text(self, account_id: str) -> str:
+        """Short per-account line for the Accounts list (US-25). Full wording is US-38's."""
+        from calpi.data import formatting, timeutil
+        st = self.sync_status.account(account_id) if self.sync_status else None
+        if st is None or st.last_attempt_at is None:
+            return "Added"
+        if st.last_error_code:
+            return f"Sync problem ({st.last_error_code})"
+        return "Synced " + formatting.relative_datetime(st.last_success_at, timeutil.now())
 
     def reconcile_accounts(self, *_a) -> None:
         """US-25 D5: drop calendars of accounts that are no longer configured. Cheap; safe to call

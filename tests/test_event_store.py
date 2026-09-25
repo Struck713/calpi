@@ -48,11 +48,12 @@ def test_pragmas(store):
 
 def test_migrations(tmp_path, monkeypatch):
     p = tmp_path / "m.sqlite3"
+    n = len(db.MIGRATIONS)
     c = db.connect(p)
-    assert db.schema_version(c) == 1
+    assert db.schema_version(c) == n
     c.close()
     c = db.connect(p)
-    assert db.schema_version(c) == 1
+    assert db.schema_version(c) == n
     c.close()
     calls = []
 
@@ -62,7 +63,7 @@ def test_migrations(tmp_path, monkeypatch):
 
     monkeypatch.setattr(db, "MIGRATIONS", [*db.MIGRATIONS, v2])
     c = db.connect(p)
-    assert db.schema_version(c) == 2 and calls == [1]
+    assert db.schema_version(c) == n + 1 and calls == [1]
     c.close()
     db.connect(p).close()
     assert calls == [1]
@@ -74,9 +75,9 @@ def test_migrations(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "MIGRATIONS", [*db.MIGRATIONS, v3])
     with pytest.raises(RuntimeError):
         db.connect(p)
-    monkeypatch.setattr(db, "MIGRATIONS", db.MIGRATIONS[:2])
+    monkeypatch.setattr(db, "MIGRATIONS", db.MIGRATIONS[:n + 1])
     c = db.connect(p)
-    assert db.schema_version(c) == 2
+    assert db.schema_version(c) == n + 1
     assert c.execute("SELECT name FROM sqlite_master WHERE name='half'").fetchone() is None
 
 
