@@ -3,10 +3,13 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import signal
+import sys
+import threading
 
 from gi.repository import GLib, Gtk
 
-from calpi import __version__, paths
+from calpi import __version__, crashguard, paths, watchdog
 from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets_enabled,
                          install_target_checker)
 from calpi.inactivity import DEFAULT_RETURN_SECONDS, InactivityMonitor
@@ -150,6 +153,7 @@ class CalpiApp(Gtk.Application):
         self.settings = None            # SettingsStore, created in _on_activate
         self.clock = None               # ClockService, created in _on_activate
         self.credentials = None         # CredentialStore, created in _on_activate (US-13)
+        self.safe_mode = False          # US-12: crash loop detected; extras/auto-sync must check it
         if not hasattr(self, "startup_notices"):
             self.startup_notices: list[str] = []
         self.connect("activate", self._on_activate)
@@ -158,6 +162,13 @@ class CalpiApp(Gtk.Application):
         if self.window is not None:          # activate can fire twice; keep one window
             self.window.present()
             return
+        self.safe_mode = crashguard.record_start_and_check()      # US-12 D4, before anything else
+        if self.safe_mode:
+            self.startup_notices.append("safe_mode")
+        crashguard.test_crash_point("start", self.safe_mode)
+        from calpi.data import db
+        if db.recover_if_corrupt():                               # US-12 D8, before any store opens
+            self.startup_notices.append("db_reset")
         from calpi.data.settings_store import SettingsStore
         self.settings = SettingsStore()
         log.info("settings loaded from %s", self.settings.path)
@@ -176,11 +187,64 @@ class CalpiApp(Gtk.Application):
         self.clock = ClockService()
         self.window = MainWindow(self, self.args.windowed)
         self.window.present()
+        self._setup_recovery()
         log.info("calpi ready version=%s build=%s state_dir=%s renderer=%s",
                  __version__, _build_stamp(), paths.state_dir(),
                  os.environ.get("GSK_RENDERER"))
         if self.args.exit_after:
             GLib.timeout_add_seconds(self.args.exit_after, self._exit_for_test)
+
+    def _setup_recovery(self) -> None:
+        """US-12: banner, READY after first paint, watchdog pings from the main loop, stable timer."""
+        mv = self.window.month_view
+        if self.safe_mode:
+            mv.header.end_slot.append(Gtk.Label(label="Safe mode", css_classes=["safe-mode-badge"]))
+            self.window.overlay.add_overlay(Gtk.Label(
+                label="calpi restarted several times and is running in safe mode. Your data is safe.",
+                css_classes=["safe-mode-notice"], halign=Gtk.Align.CENTER, valign=Gtk.Align.END,
+                can_target=False))
+        if "db_reset" in self.startup_notices:
+            log.error("calendar data was reset (integrity check failed); it will download again")
+            mv.header.end_slot.append(Gtk.Label(label="Calendar data was reset and will download again",
+                                                css_classes=["safe-mode-badge"]))
+        log.info("watchdog: NOTIFY_SOCKET=%s interval=%s", os.environ.get("NOTIFY_SOCKET"),
+                 watchdog.watchdog_interval_s())
+        self._ready_sent = False
+
+        @safe_callback(repeat=False)
+        def _send_ready(*_a):
+            if not self._ready_sent:
+                self._ready_sent = True
+                watchdog.ready()
+                log.info("watchdog: READY sent")
+
+        def _on_map(win):
+            clock = win.get_frame_clock()
+            if clock is None:
+                GLib.idle_add(_send_ready)
+                return
+            hid = []
+            def _painted(c):
+                c.disconnect(hid[0])
+                _send_ready()
+            hid.append(clock.connect("after-paint", _painted))
+            clock.request_phase(0x20)          # make sure a frame is painted
+        if self.window.get_mapped():
+            _on_map(self.window)
+        else:
+            self.window.connect("map", _on_map)
+        # Fallback so a missing frame clock/paint can never stall startup for the full 90 s.
+        GLib.timeout_add_seconds(20, _send_ready)
+        # Pings ONLY from the main loop (a thread would hide a frozen UI).
+        GLib.timeout_add_seconds(watchdog.DEFAULT_PING_SECONDS,
+                                 safe_callback(watchdog.ping, repeat=True))
+        GLib.timeout_add_seconds(crashguard.STABLE_S, self._mark_stable)
+        crashguard.test_crash_point("render", self.safe_mode)   # stand-in until MonthView.reload exists
+
+    @safe_callback(repeat=False)
+    def _mark_stable(self):
+        crashguard.mark_stable()
+        log.info("crashguard: stable, start counter cleared")
 
     def _maybe_load_sample_data(self):
         if not (self.args.sample_data or os.environ.get("CALPI_SAMPLE_DATA") == "1"):
@@ -213,6 +277,19 @@ def parse_args(argv=None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _install_excepthooks() -> None:
+    crit = logging.getLogger("calpi")
+
+    def _hook(exc_type, exc, tb):
+        crit.critical("uncaught exception", exc_info=(exc_type, exc, tb))
+    sys.excepthook = _hook
+
+    def _thread_hook(args):
+        crit.critical("uncaught exception in thread %s", args.thread.name if args.thread else "?",
+                      exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+    threading.excepthook = _thread_hook
+
+
 def main(argv=None) -> int:
     from calpi.logging_setup import setup_logging
     setup_logging()
@@ -220,5 +297,13 @@ def main(argv=None) -> int:
     install_log_redaction()
     args = parse_args(argv)
     paths.set_state_dir_override(args.state_dir)
+    _install_excepthooks()
     app = CalpiApp(args)
+
+    def _on_term():
+        log.info("calpi stopping (SIGTERM)")
+        watchdog.stopping()
+        app.quit()
+        return GLib.SOURCE_REMOVE
+    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, _on_term)
     return app.run([])       # don't pass our argv to GTK
