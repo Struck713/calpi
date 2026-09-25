@@ -71,3 +71,12 @@ Not yet recorded: no Pi or monitor was reachable when US-29 was built. On the Pi
 `ls -l /sys/class/backlight/ /dev/i2c-*; id kiosk; sudo -u kiosk ddcutil detect --terse; sudo -u kiosk ddcutil --terse getvcp 10`
 and fill in: monitor model, backlight device (usually none for HDMI), DDC/CI supported (yes/no), backend chosen
 by the probe (`journalctl -u calpi-kiosk | grep "brightness: backend"`).
+
+## Display off methods (US-30)
+
+Not yet recorded: no Pi or monitor was reachable when US-30 was built. On the Pi (owner watching the screen), try,
+as the kiosk user with `XDG_RUNTIME_DIR=/run/user/$(id -u kiosk) WAYLAND_DISPLAY=wayland-0`:
+`wlopm` (lists outputs), `wlopm --off HDMI-A-1; sleep 5; wlopm --on HDMI-A-1` (x10), then only if that fails
+`wlr-randr --output HDMI-A-1 --off/--on`. Record which work reliably, whether the monitor wakes by mouse/touch while
+off, and the method the app picked (`journalctl -u calpi-kiosk | grep "display power: methods"`,
+`grep "dim: night"`). DDC (VCP D6) and wlr-randr are only used after Preview + owner confirmation.

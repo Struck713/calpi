@@ -133,6 +133,9 @@ EOF
 udevadm control --reload-rules && udevadm trigger || true
 # group changes reach the kiosk process only after a service restart
 
+echo "==> display power management (US-30)"
+apt-get install -y --no-install-recommends wlopm wlr-randr || echo "wlopm/wlr-randr unavailable: overnight 'Turn off' falls back to backlight/DDC/black overlay"
+
 echo "==> polkit: kiosk may manage NetworkManager (US-23)"
 install -d -m 0755 /etc/polkit-1/rules.d
 cat > /etc/polkit-1/rules.d/50-calpi-networkmanager.rules <<'EOF'
