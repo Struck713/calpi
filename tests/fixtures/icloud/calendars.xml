@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<multistatus xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CS="http://calendarserver.org/ns/" xmlns:A="http://apple.com/ns/ical/">
+  <response>
+    <href>/1234567890/calendars/</href>
+    <propstat><prop><resourcetype><collection/></resourcetype></prop><status>HTTP/1.1 200 OK</status></propstat>
+  </response>
+  <response>
+    <href>/1234567890/calendars/work/</href>
+    <propstat>
+      <prop>
+        <displayname>Work</displayname>
+        <resourcetype><collection/><C:calendar/></resourcetype>
+        <C:supported-calendar-component-set><C:comp name="VEVENT"/></C:supported-calendar-component-set>
+        <A:calendar-color>#1BADF8FF</A:calendar-color>
+        <A:calendar-order>2</A:calendar-order>
+        <CS:getctag>ctag-work-1</CS:getctag>
+        <sync-token>http://example/sync/work/1</sync-token>
+        <current-user-privilege-set><privilege><read/></privilege><privilege><write/></privilege></current-user-privilege-set>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+  <response>
+    <href>/1234567890/calendars/home/</href>
+    <propstat>
+      <prop>
+        <displayname>Home</displayname>
+        <resourcetype><collection/><C:calendar/></resourcetype>
+        <C:supported-calendar-component-set><C:comp name="VEVENT"/><C:comp name="VTODO"/></C:supported-calendar-component-set>
+        <A:calendar-color>#FF2968FF</A:calendar-color>
+        <A:calendar-order>1</A:calendar-order>
+        <CS:getctag>ctag-home-1</CS:getctag>
+        <current-user-privilege-set><privilege><read/></privilege></current-user-privilege-set>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+  <response>
+    <href>/1234567890/calendars/reminders/</href>
+    <propstat>
+      <prop>
+        <displayname>Reminders</displayname>
+        <resourcetype><collection/><C:calendar/></resourcetype>
+        <C:supported-calendar-component-set><C:comp name="VTODO"/></C:supported-calendar-component-set>
+        <A:calendar-color>#63DA38FF</A:calendar-color>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+  <response>
+    <href>/1234567890/calendars/nocomp/</href>
+    <propstat>
+      <prop>
+        <displayname>Unspecified</displayname>
+        <resourcetype><collection/><C:calendar/></resourcetype>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+    <propstat>
+      <prop><A:calendar-color/></prop>
+      <status>HTTP/1.1 404 Not Found</status>
+    </propstat>
+  </response>
+  <response>
+    <href>/1234567890/calendars/inbox/</href>
+    <propstat><prop><displayname>Inbox</displayname><resourcetype><collection/><C:schedule-inbox/></resourcetype></prop><status>HTTP/1.1 200 OK</status></propstat>
+  </response>
+  <response>
+    <href>/1234567890/calendars/outbox/</href>
+    <propstat><prop><displayname>Outbox</displayname><resourcetype><collection/><C:schedule-outbox/></resourcetype></prop><status>HTTP/1.1 200 OK</status></propstat>
+  </response>
+</multistatus>

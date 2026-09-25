@@ -54,6 +54,16 @@ def register(key: Key) -> Key:
 register(Key(K_SCHEMA_VERSION, int, 1))
 register(Key(K_SETUP_COMPLETED, bool, False))
 register(Key(K_INACTIVITY_RETURN_SECONDS, int, 120, lambda v: 30 <= v <= 3600))
+K_ACCOUNTS = "accounts"
+_ACCOUNT_KEYS = {"id", "provider", "username", "display_name", "server_url",
+                 "principal_url", "calendar_home_url", "created_at"}
+
+
+def _valid_accounts(v) -> bool:
+    return all(isinstance(a, dict) and _ACCOUNT_KEYS <= set(a) for a in v)
+
+
+register(Key(K_ACCOUNTS, list, [], _valid_accounts))    # US-14: account records, no secrets
 # Later stories append here.
 
 

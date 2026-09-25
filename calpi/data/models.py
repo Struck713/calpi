@@ -55,3 +55,27 @@ class Event:
                     raise ValueError("timed events need aware datetimes")
         if self.end < self.start:
             raise ValueError("end before start")
+
+
+@dataclass(frozen=True, slots=True)
+class Account:
+    """A calendar account. Never holds the secret (that lives in CredentialStore under `id`)."""
+    id: str
+    provider: str
+    username: str
+    display_name: str
+    server_url: str
+    principal_url: str
+    calendar_home_url: str
+    created_at: str          # ISO UTC
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteCalendar:
+    href: str
+    name: str
+    color: str | None = None
+    ctag: str | None = None
+    sync_token: str | None = None
+    order: int | None = None
+    read_only: bool = False
