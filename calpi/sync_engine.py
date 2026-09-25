@@ -95,8 +95,8 @@ class SyncEngine:
         self._timed_out = False
         self._debounce: dict[str, tuple[int, Request]] = {}
         self._last_end_mono: float | None = None
-        self._started = False
         self.next_run_mono: float | None = None           # US-27: monotonic deadline of the armed timer
+        self._started = False
         self._first_force = False
         self.last_result: dict | None = None
         self.last_success_wall: datetime | None = None
@@ -143,10 +143,6 @@ class SyncEngine:
         if self._timer_id:
             self._source_remove(self._timer_id)
         self._timer_id = self._timeout_add(max(1, int(seconds + 0.999)), self._on_timer)
-
-    @safe_callback(repeat=False)
-    def _on_timer(self):
-        self._timer_id = 0
         self.next_run_mono = self._mono() + seconds          # US-27: read by the Sync settings section
 
     def next_run_in_seconds(self) -> float | None:
@@ -154,6 +150,10 @@ class SyncEngine:
         if self.next_run_mono is None:
             return None
         return max(0.0, self.next_run_mono - self._mono())
+
+    @safe_callback(repeat=False)
+    def _on_timer(self):
+        self._timer_id = 0
         first = self._last_end_mono is None
         self.request_sync("startup" if first else "interval", force=first and self._first_force)
 
@@ -192,11 +192,11 @@ class SyncEngine:
     def _launch(self, req: Request) -> None:
         log.info("sync: starting (%s%s)", req.reason, ", forced" if req.force else "")
         self._timed_out = False
+        self.next_run_mono = None
         try:
             self._running = self._spawn(req, self._on_done)
         except Exception:
             log.exception("sync: could not start the worker")
-        self.next_run_mono = None
             self._running = object()           # so _finish sees a run in progress
             self._finish(None)
             return
