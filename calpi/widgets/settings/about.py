@@ -87,6 +87,20 @@ class AboutSection:
         self.widget.append(g)
         self._showing = False
 
+    def _add_zone_rows(self, g) -> None:
+        """US-28: show the system zone and display zone separately when they differ."""
+        from calpi.data import timeutil
+        from calpi.data.settings_store import K_TIMEZONE
+        settings = getattr(self.ctx.app, "settings", None)
+        chosen = settings.get(K_TIMEZONE) if settings else None
+        system = timeutil.system_tz_name()
+        if chosen and chosen != system:
+            g.add(InfoRow("Display time zone", chosen))
+            g.add(InfoRow("System time zone", system,
+                          description="The system zone hasn't been changed to match."))
+        else:
+            g.add(InfoRow("Time zone", system))
+
     def on_show(self):
         self._showing = True
         run_in_thread(_collect, on_done=self._done, name="about-info")

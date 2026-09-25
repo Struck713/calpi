@@ -111,6 +111,16 @@ if [[ "$LEAN" == 1 ]]; then
   done
 fi
 
+echo "==> polkit: kiosk may set the time zone (US-28)"
+install -d /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/51-calpi-timedate.rules <<'EOF3'
+polkit.addRule(function(action, subject) {
+    if (subject.user === "kiosk" && action.id === "org.freedesktop.timedate1.set-timezone") {
+        return polkit.Result.YES;
+    }
+});
+EOF3
+
 echo "==> display brightness access (US-29)"
 apt-get install -y --no-install-recommends ddcutil || echo "ddcutil unavailable: DDC backend disabled"
 echo i2c-dev > /etc/modules-load.d/calpi-i2c.conf; modprobe i2c-dev || true
