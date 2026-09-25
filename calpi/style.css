@@ -61,6 +61,9 @@ button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outl
 .osk-shift.lock   { background: @accent; color: @bg; }
 .osk-done         { background: @accent; color: @bg; font-weight: bold; }
 .osk-entry        { min-height: 72px; font-size: 32px; }
+.mono-entry       { font-family: monospace; }
+.color-swatch     { min-width: 72px; min-height: 72px; padding: 0; }
+.color-swatch:checked { border-width: 4px; }
 
 /* --- US-07 events in the grid. LINE_HEIGHT (week_row.py) = min-height + 2 x 1px margin = 25 --- */
 .week-content  { padding: 0 4px; }
