@@ -9,7 +9,7 @@ import logging
 from gi.repository import Gtk
 
 from calpi.data import timeutil
-from calpi.data.settings_store import K_TIME_FORMAT, K_TIMEZONE, K_WEEK_START
+from calpi.data.settings_store import K_DEFAULT_VIEW, K_TIME_FORMAT, K_TIMEZONE, K_WEEK_START
 from calpi.system import timezone as tzmod
 from calpi.tasks import run_in_thread
 from calpi.widgets.settings.registry import SectionSpec, register_section
@@ -51,6 +51,9 @@ class PreferencesPanel(Gtk.Box):
         g.add(ChoiceRow("Time format",
                         [("24h", "24-hour (14:30)"), ("12h", "12-hour (2:30 PM)")],
                         settings=settings, key=K_TIME_FORMAT))
+        g.add(ChoiceRow("Start with",
+                        [("month", "Month"), ("week", "Week"), ("agenda", "Agenda")],
+                        settings=settings, key=K_DEFAULT_VIEW))
         self.append(g)
         self._token = settings.subscribe(K_TIMEZONE, lambda _k, _v: self._refresh_label())
         self.connect("map", lambda *_: self._refresh_label())

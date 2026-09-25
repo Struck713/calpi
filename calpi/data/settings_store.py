@@ -90,8 +90,52 @@ register(Key(K_TIMEZONE, (str, type(None)), None, _valid_tz))
 register(Key(K_WEEK_START, int, 0, lambda v: v in (0, 5, 6)))
 register(Key(K_TIME_FORMAT, str, "24h", lambda v: v in ("24h", "12h")))
 K_DEFAULT_VIEW = "default_view"                         # US-39 (US-40 appends "agenda" to VIEWS)
-VIEWS = ("month", "week")
+VIEWS = ("month", "week", "agenda")
 register(Key(K_DEFAULT_VIEW, str, "month", lambda v: v in VIEWS))
+K_DIM_SCHEDULE = "dim_schedule"                         # US-30 (one dict, one atomic write)
+DEFAULT_DIM_SCHEDULE = {"enabled": False, "mode": "dim", "start": "22:30", "end": "06:30",
+                        "night_level": 10, "wake_minutes": 5, "confirmed_method": None}
+WAKE_MINUTES_CHOICES = (1, 5, 15)
+
+
+def _valid_hhmm(v) -> bool:
+    import re
+    return (isinstance(v, str) and re.fullmatch(r"\d{2}:\d{2}", v) is not None
+            and int(v[:2]) < 24 and v[3:] in ("00", "30"))
+
+
+def _valid_dim_schedule(v) -> bool:
+    if not isinstance(v, dict) or not set(v) <= set(DEFAULT_DIM_SCHEDULE):
+        return False
+    d = {**DEFAULT_DIM_SCHEDULE, **v}
+    return (type(d["enabled"]) is bool and d["mode"] in ("dim", "off")
+            and _valid_hhmm(d["start"]) and _valid_hhmm(d["end"]) and d["start"] != d["end"]
+            and type(d["night_level"]) is int and 5 <= d["night_level"] <= 50
+            and d["wake_minutes"] in WAKE_MINUTES_CHOICES
+            and (d["confirmed_method"] is None or isinstance(d["confirmed_method"], str)))
+
+
+register(Key(K_DIM_SCHEDULE, dict, dict(DEFAULT_DIM_SCHEDULE), _valid_dim_schedule))
+K_WEATHER = "weather"                                   # US-41
+WEATHER_DEFAULT = {"enabled": False, "name": None, "lat": None, "lon": None, "units": "celsius"}
+
+
+def _valid_weather(v) -> bool:
+    if set(v) != set(WEATHER_DEFAULT) or not isinstance(v["enabled"], bool):
+        return False
+    if v["units"] not in ("celsius", "fahrenheit"):
+        return False
+    if v["name"] is not None and not (isinstance(v["name"], str) and len(v["name"]) <= 100):
+        return False
+    for k, lim in (("lat", 90), ("lon", 180)):
+        x = v[k]
+        if x is not None and not (isinstance(x, (int, float)) and not isinstance(x, bool)
+                                  and -lim <= x <= lim):
+            return False
+    return True
+
+
+register(Key(K_WEATHER, dict, WEATHER_DEFAULT, _valid_weather))
 # Later stories append here.
 
 

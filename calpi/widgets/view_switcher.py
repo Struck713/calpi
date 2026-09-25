@@ -21,6 +21,7 @@ class ViewDef:
 VIEW_DEFS: list[ViewDef] = [
     ViewDef("month", "Month", "calendar"),
     ViewDef("week", "Week", "week"),
+    ViewDef("agenda", "Agenda", "agenda"),
 ]
 
 
