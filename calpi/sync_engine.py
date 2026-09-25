@@ -19,6 +19,7 @@ from calpi import paths, watchdog
 from calpi.data import timeutil
 from calpi.data.settings_store import (K_ACCOUNTS, K_SYNC_INTERVAL_MINUTES, K_SYNC_WINDOW_BACK,
                                        K_SYNC_WINDOW_FORWARD)
+from calpi.sync import retry
 from calpi.sync.worker import RESULT_PREFIX
 from calpi.tasks import safe_callback
 
@@ -99,6 +100,9 @@ class SyncEngine:
         self._first_force = False
         self.last_result: dict | None = None
         self.last_success_wall: datetime | None = None
+        self.policy = retry.RetryPolicy()                  # US-17
+        self.offline = False                               # US-17: last run failed with network errors
+        self._offline_since: float | None = None
         self.synced_window: tuple[datetime, datetime] | None = None
         self.result_callbacks: list = []
         self.state_callbacks: list = []                    # (running: bool) -> None
@@ -227,13 +231,48 @@ class SyncEngine:
             r = self._synthetic(code)
         self._running = None
         self._last_end_mono = self._mono()
+        delay = self._apply_policy(r)
         self._handle_result(r)
         self._notify_state(False)
         if self._pending is not None:
             req, self._pending = self._pending, None
             self._launch(req)
         else:
-            self._arm(self.interval_minutes() * 60)
+            self._arm(delay)
+
+    def _apply_policy(self, r: dict) -> int:
+        """US-17: next delay from the retry policy; tracks the offline flag and logs transitions."""
+        interval = self.interval_minutes() * 60
+        kind = retry.classify(r)
+        delay = self.policy.next_delay(kind, retry.max_retry_after(r), interval)
+        now_off = retry.is_offline(r)
+        if now_off and not self.offline:
+            codes = sorted({a.get("error") for a in r.get("accounts", []) if a.get("error")})
+            log.info("sync: offline (%s); retrying in %dm", ",".join(codes), max(1, round(delay / 60)))
+            self._offline_since = self._mono()
+        elif now_off:
+            log.debug("sync: still offline; retrying in %ds", delay)
+        elif self.offline:
+            since = self._offline_since
+            mins = round((self._mono() - since) / 60) if since is not None else 0
+            log.info("sync: back online after %dm", mins)
+            self._offline_since = None
+        elif kind == "transient":
+            log.debug("sync: transient failure; retrying in %ds", delay)
+        self.offline = now_off
+        return delay
+
+    NETWORK_UP_DEBOUNCE_S = 5
+
+    def on_network_change(self, old, new) -> None:
+        """US-17: NetworkMonitor callback. Coming online triggers a sync 5 s later (bypasses backoff)."""
+        if getattr(new, "name", "") == "ONLINE" and getattr(old, "name", "") != "ONLINE":
+            self._debounced("network", self.NETWORK_UP_DEBOUNCE_S, Request("network-up"))
+
+    def schedule_retry(self, delay_s: float) -> None:
+        """Arm the next scheduled run `delay_s` from now (no-op while a run is active)."""
+        if self._started and self._running is None and self._pending is None:
+            self._arm(delay_s)
 
     def _synthetic(self, code: str) -> dict:
         try:

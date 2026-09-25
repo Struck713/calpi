@@ -8,7 +8,7 @@ from datetime import datetime
 
 from gi.repository import Gtk
 
-from calpi.data import formatting, timeutil
+from calpi.data import formatting, sync_text, timeutil
 from calpi.widgets.util import set_text_if_changed
 
 
@@ -27,6 +27,18 @@ def indicator_text(running: bool, last_success: datetime | None, now: datetime) 
 
 
 class SyncIndicator(Gtk.Label):
+    network = None                 # US-17: NetworkMonitor / ClockTrust, set by bind_status()
+    clock_trust = None
+
+    def bind_status(self, network=None, clock_trust=None) -> None:
+        """US-17: also refresh on network / clock-trust changes."""
+        self.network, self.clock_trust = network, clock_trust
+        if network is not None:
+            network.callbacks.append(lambda _o, _n: self.update())
+        if clock_trust is not None:
+            clock_trust.callbacks.append(lambda _s: self.update())
+        self.update()
+
     def __init__(self, engine, clock=None):
         super().__init__(css_classes=["sync-status"], visible=False)
         self.engine = engine
@@ -37,7 +49,13 @@ class SyncIndicator(Gtk.Label):
         self.update()
 
     def update(self) -> None:
-        text = indicator_text(self.engine.is_running, self.engine.last_success_wall, timeutil.now())
+        net = self.network.state.value if self.network is not None else None
+        synced = self.clock_trust.synced if self.clock_trust is not None else None
+        state, text = sync_text.compute_state(self.engine.is_running, getattr(self.engine, "offline", False),
+                                              synced, net, self.engine.last_success_wall, timeutil.now())
+        for c in ("offline", "stale", "clock"):
+            if (c == state) != self.has_css_class(c):
+                (self.add_css_class if c == state else self.remove_css_class)(c)
         set_text_if_changed(self, text)
         if self.get_visible() != bool(text):
             self.set_visible(bool(text))

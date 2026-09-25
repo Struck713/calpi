@@ -255,6 +255,8 @@ class CalpiApp(Gtk.Application):
         self.dimming = None             # DimController, created with the window (US-30)
         self.safe_mode = False          # US-12: crash loop detected; extras/auto-sync must check it
         self.sync = None                # SyncEngine, created in _on_activate (US-16)
+        self.network = None             # NetworkMonitor (US-17)
+        self.clock_trust = None         # ClockTrust (US-17)
         self.weather = None             # WeatherService, created in _on_activate (US-41)
         if not hasattr(self, "startup_notices"):
             self.startup_notices: list[str] = []
@@ -399,8 +401,24 @@ class CalpiApp(Gtk.Application):
         from calpi.widgets.sync_indicator import SyncIndicator
         self.sync = SyncEngine(self)
         self.sync.result_callbacks.append(self.reconcile_accounts)      # US-25 D5
-        self.window.month_view.header.end_slot.prepend(SyncIndicator(self.sync, self.clock))
+        indicator = SyncIndicator(self.sync, self.clock)
+        self.window.month_view.header.end_slot.prepend(indicator)
+        self._setup_network(indicator)
         self.sync.start()                                               # no-op in safe mode
+
+    def _setup_network(self, indicator) -> None:
+        """US-17: NetworkManager monitor + NTP trust; network-up triggers a sync and a weather refresh."""
+        from calpi.system.networkmanager import NetworkMonitor
+        from calpi.system.timesync import ClockTrust
+        self.network = NetworkMonitor()
+        self.clock_trust = ClockTrust()
+        self.network.callbacks.append(self.sync.on_network_change)
+        self.network.callbacks.append(self._on_network_change)
+        indicator.bind_status(self.network, self.clock_trust)
+
+    def _on_network_change(self, old, new) -> None:
+        if new.name == "ONLINE" and old.name != "ONLINE" and self.weather is not None:
+            self.weather.on_network_up()
 
     def _setup_weather(self) -> None:
         """US-41: forecast service (off by default), header panel, day-cell forecasts."""

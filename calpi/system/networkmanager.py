@@ -253,3 +253,63 @@ class WifiConnector:
             self._teardown(a)
             self._finish(a, ("error", wifi.NOT_REACHABLE))
         return GLib.SOURCE_REMOVE
+
+
+# --- US-17: connectivity monitor -------------------------------------------------------------
+from calpi.system.netstate import NetState, map_state   # noqa: E402  (no gi; re-exported here)
+
+NM_IFACE = "org.freedesktop.NetworkManager"
+
+
+class NetworkMonitor:
+    """Tracks NetworkManager's global `State` (async, cached proxy). Without NM: state UNKNOWN.
+
+    `callbacks` are called as cb(old: NetState, new: NetState) on the main loop.
+    """
+
+    def __init__(self):
+        self.state = NetState.UNKNOWN
+        self.callbacks: list = []
+        self._proxy = None
+        try:
+            Gio.DBusProxy.new_for_bus(Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None,
+                                      NM, NM_PATH, NM_IFACE, None, self._on_proxy)
+        except Exception as e:
+            log.info("network: NetworkManager not available (%s); relying on sync results", e)
+
+    def _on_proxy(self, _src, res):
+        try:
+            proxy = Gio.DBusProxy.new_for_bus_finish(res)
+        except GLib.Error as e:
+            log.info("network: NetworkManager not available; relying on sync results (%s)", e.message)
+            return
+        if proxy.get_name_owner() is None:
+            log.info("network: NetworkManager not available; relying on sync results")
+            return
+        self._proxy = proxy
+        proxy.connect("g-properties-changed", self._on_props)
+        self._update(proxy.get_cached_property("State"))
+
+    def _on_props(self, _proxy, changed, _invalidated):
+        try:
+            v = changed.lookup_value("State", None)
+            if v is not None:
+                self._update(v)
+        except Exception:
+            log.exception("network: reading the state change failed")
+
+    def _update(self, variant) -> None:
+        if variant is None:
+            return
+        self.set_state(map_state(variant.get_uint32()))
+
+    def set_state(self, new: NetState) -> None:
+        if new == self.state:
+            return
+        old, self.state = self.state, new
+        log.info("network: %s -> %s", old.name, new.name)
+        for cb in list(self.callbacks):
+            try:
+                cb(old, new)
+            except Exception:
+                log.exception("network callback failed")

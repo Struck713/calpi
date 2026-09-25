@@ -111,7 +111,7 @@ def test_timeout_kills_and_marks_timeout(h):
     assert h.sp.killed == 1
     h.sp.finish(raw="")                                     # killed: no output
     assert got[0]["status"] == "crashed" and h.eng.last_result is got[0]
-    assert h.t.find(15 * 60)                                # schedule continues
+    assert h.t.find(60)                                # crashed run: transient backoff
     assert not h.eng.is_running
 
 
@@ -133,7 +133,7 @@ def test_bad_output_handled_as_unknown(h, caplog):
         h.eng.request_sync("x")
         h.sp.finish(raw=raw)
         assert h.eng.last_result["accounts"][0]["error"] == "UNKNOWN"
-        assert not h.eng.is_running and h.t.find(15 * 60)
+        assert not h.eng.is_running and (h.t.find(60) or h.t.find(120) or h.t.find(240))
         h.t.fire(h.t.find(15 * 60)[0]) if False else None
     assert any(r.levelname == "ERROR" for r in caplog.records)
 
@@ -141,7 +141,7 @@ def test_bad_output_handled_as_unknown(h, caplog):
 def test_spawn_failure_keeps_schedule(h):
     h.sp.fail = True
     h.eng.request_sync("x")
-    assert not h.eng.is_running and h.t.find(15 * 60)
+    assert not h.eng.is_running and h.t.find(60)
 
 
 def test_interval_change_reschedules(h):
@@ -248,3 +248,53 @@ def test_next_run_in_seconds(h):                            # US-27
     h.now[0] = 1350.0
     h.app.settings.set(K_SYNC_INTERVAL_MINUTES, 30)
     assert h.eng.next_run_in_seconds() == 1800 - 300
+
+
+# --- US-17 ---
+def test_backoff_then_success_resets(h):
+    h.eng.start()
+    h.t.fire(h.t.find(10)[0])
+    h.sp.finish(done(errors=("NETWORK_DOWN",)))
+    assert h.eng.offline and h.t.find(60)
+    h.t.fire(h.t.find(60)[0])
+    h.sp.finish(done(errors=("DNS_FAILED",)))
+    assert h.t.find(120)
+    h.t.fire(h.t.find(120)[0])
+    h.sp.finish(done())
+    assert not h.eng.offline and h.t.find(15 * 60) and h.eng.policy.failures == 0
+
+
+def test_permanent_error_uses_interval(h):
+    h.eng.start()
+    h.t.fire(h.t.find(10)[0])
+    h.sp.finish(done(errors=("AUTH_FAILED",)))
+    assert h.t.find(15 * 60) and not h.eng.offline
+
+
+def test_crashed_run_backs_off(h):
+    h.eng.start()
+    h.t.fire(h.t.find(10)[0])
+    h.sp.finish(raw="")
+    assert h.t.find(60)
+
+
+def test_network_up_debounced_request(h):
+    from calpi.system.netstate import NetState
+    h.eng.start()
+    h.t.fire(h.t.find(10)[0])
+    h.sp.finish(done(errors=("NETWORK_DOWN",)))
+    h.eng.on_network_change(NetState.OFFLINE, NetState.LIMITED)
+    assert not h.t.find(5)
+    h.eng.on_network_change(NetState.OFFLINE, NetState.ONLINE)
+    h.eng.on_network_change(NetState.OFFLINE, NetState.ONLINE)   # re-debounced, still one timer
+    assert len(h.t.find(5)) == 1
+    n = len(h.sp.calls)
+    h.t.fire(h.t.find(5)[0])
+    assert len(h.sp.calls) == n + 1 and h.sp.calls[-1][0].reason == "network-up"
+    assert not h.t.find(60)                                  # the backoff timer was replaced
+
+
+def test_schedule_retry(h):
+    h.eng.start()
+    h.eng.schedule_retry(77)
+    assert h.t.find(77)
