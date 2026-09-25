@@ -231,3 +231,20 @@ def test_parse_result_line_and_argv():
     a = build_argv(Request("r", True, (date(2030, 1, 1), date(2030, 2, 1))), python="/py")
     assert a[-8:] == ["/py", "-m", "calpi.sync.worker", "--reason", "r", "--force",
                       "--extra-range", "2030-01-01:2030-02-01"]
+
+
+def test_next_run_in_seconds(h):                            # US-27
+    assert h.eng.next_run_in_seconds() is None
+    h.eng.start()
+    assert h.eng.next_run_in_seconds() == 10
+    h.now[0] = 1004.0
+    assert h.eng.next_run_in_seconds() == 6
+    h.now[0] = 1050.0
+    assert h.eng.next_run_in_seconds() == 0.0               # never negative
+    h.t.fire(h.t.find(10)[0])
+    assert h.eng.next_run_in_seconds() is None              # running
+    h.sp.finish(done())
+    assert h.eng.next_run_in_seconds() == 900
+    h.now[0] = 1350.0
+    h.app.settings.set(K_SYNC_INTERVAL_MINUTES, 30)
+    assert h.eng.next_run_in_seconds() == 1800 - 300

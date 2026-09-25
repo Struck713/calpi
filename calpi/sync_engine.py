@@ -95,6 +95,7 @@ class SyncEngine:
         self._debounce: dict[str, tuple[int, Request]] = {}
         self._last_end_mono: float | None = None
         self._started = False
+        self.next_run_mono: float | None = None           # US-27: monotonic deadline of the armed timer
         self._first_force = False
         self.last_result: dict | None = None
         self.last_success_wall: datetime | None = None
@@ -142,6 +143,13 @@ class SyncEngine:
     @safe_callback(repeat=False)
     def _on_timer(self):
         self._timer_id = 0
+        self.next_run_mono = self._mono() + seconds          # US-27: read by the Sync settings section
+
+    def next_run_in_seconds(self) -> float | None:
+        """Seconds until the next scheduled run, or None if none is scheduled (running / paused)."""
+        if self.next_run_mono is None:
+            return None
+        return max(0.0, self.next_run_mono - self._mono())
         first = self._last_end_mono is None
         self.request_sync("startup" if first else "interval", force=first and self._first_force)
 
@@ -184,6 +192,7 @@ class SyncEngine:
             self._running = self._spawn(req, self._on_done)
         except Exception:
             log.exception("sync: could not start the worker")
+        self.next_run_mono = None
             self._running = object()           # so _finish sees a run in progress
             self._finish(None)
             return

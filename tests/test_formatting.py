@@ -101,3 +101,35 @@ def test_relative_and_long_date():
     assert f.relative_day_word(t0 - timedelta(days=1), t0) == "Yesterday"
     assert f.relative_day_word(t0 + timedelta(days=2), t0) is None
     assert f.long_date(t0) == "Tuesday, 15 September 2026"
+
+
+# --- US-27 ---
+def test_interval_label():
+    assert [f.interval_label(m) for m in (5, 60, 120, 240, 1)] == \
+        ["5 minutes", "1 hour", "2 hours", "4 hours", "1 minute"]
+
+
+def test_relative_datetime():
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("Europe/Paris")
+    now = datetime(2026, 9, 25, 0, 30, tzinfo=tz)            # Friday, just after midnight
+    assert f.relative_datetime(None, now) == "Never"
+    assert f.relative_datetime(datetime(2026, 9, 25, 0, 5, tzinfo=tz), now) == "Today 00:05"
+    # 22:15 UTC on the 24th is 00:15 Paris on the 25th: "Today" in the display zone
+    assert f.relative_datetime(datetime(2026, 9, 24, 22, 15, tzinfo=timezone.utc), now) == "Today 00:15"
+    assert f.relative_datetime(datetime(2026, 9, 24, 22, 15, tzinfo=tz), now) == "Yesterday 22:15"
+    assert f.relative_datetime(datetime(2026, 9, 21, 9, 10, tzinfo=tz), now) == "Monday 09:10"
+    assert f.relative_datetime(datetime(2026, 9, 12, 9, 10, tzinfo=tz), now) == "12 Sep 09:10"
+    f.set_time_format("12h")
+    assert f.relative_datetime(datetime(2026, 9, 24, 22, 15, tzinfo=tz), now) == "Yesterday 10:15 PM"
+
+
+def test_next_update_text():
+    n = f.next_update_text
+    assert n(700, False) == "in about 12 minutes"
+    assert n(61, False) == "in about 2 minutes"
+    assert n(30, False) == "in less than a minute"
+    assert n(None, True) == "Updating now…"
+    assert n(240, False, offline=True) == "Retrying in 4 minutes (offline)"
+    assert n(240, False, safe_mode=True) == "Paused (safe mode)"
+    assert n(None, False) == "Not scheduled"

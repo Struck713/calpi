@@ -17,6 +17,7 @@ SECTION_MODULES = [
     "display",     # US-29 (US-30 adds its group to this section)
     "accounts",
     "calendars",   # US-26
+    "sync",        # US-27
     "preferences",
     "weather",     # US-41
     # US-23 network, US-25 accounts, US-26 calendars, US-27 sync, US-29 display,
