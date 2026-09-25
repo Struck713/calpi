@@ -82,8 +82,9 @@ Unit notes:
 - Disable services the kiosk doesn't need: `sudo systemctl disable --now bluetooth hciuart avahi-daemon triggerhappy` (keep `ssh` and `systemd-timesyncd`).
 - In `config.txt`: `disable_splash=1`. If Bluetooth is unused: `dtoverlay=disable-bt`.
 - Time and timezone matter for a display: `sudo raspi-config nonint do_change_timezone America/Chicago` (adjust), then check with `timedatectl`.
-- Hardware watchdog (reboots a hung Pi): `dtparam=watchdog=on` in `config.txt`, plus `RuntimeWatchdogSec=15` in `/etc/systemd/system.conf`.
-- SD card protection, **after** everything works: `sudo raspi-config` → Performance → Overlay File System. Writes then go to RAM and the root filesystem becomes read-only. Disable the overlay before deploying new code, or deploy to a separate writable partition.
+- Recovery layers (US-12, all applied by `setup-pi.sh`): unit is `Type=notify` + `NotifyAccess=all` + `WatchdogSec=30` (app sends READY after the first frame, WATCHDOG every 10 s from the main loop only), `Restart=always`, `StartLimitIntervalSec=0` (in `[Unit]`, never "failed"); `RestartSteps/RestartMaxDelaySec` need systemd >= 254 and are stripped on older ones. The app's crash guard (`/run/calpi/starts`) enters safe mode after 4 quick crashes.
+- Hardware watchdog: `dtparam=watchdog=on` in `config.txt` plus `RuntimeWatchdogSec=15` in `/etc/systemd/system.conf.d/calpi-watchdog.conf` (takes effect after a reboot; check `systemctl show -p RuntimeWatchdogUSec`).
+- SD wear: journald persistent but capped (`/etc/systemd/journald.conf.d/calpi.conf`, 32M, sync every 10 min), no swap file on the card (dphys-swapfile disabled; zram or none), `noatime` root, tmpfs `/tmp`, `fsck.repair=yes` in `cmdline.txt`. Do NOT use the overlay FS: it would wipe `/var/lib/calpi` at every reboot.
 
 ## Debugging checklist
 

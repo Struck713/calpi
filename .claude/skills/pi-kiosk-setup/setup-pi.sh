@@ -69,6 +69,39 @@ if [[ "$DISABLE_BT" == 1 ]]; then
   grep -q '^dtoverlay=disable-bt' "$CONFIG" || echo 'dtoverlay=disable-bt' >> "$CONFIG"
 fi
 
+echo "==> robustness (US-12)"
+SYSTEMD_VER="$(systemctl --version | awk 'NR==1{print $2}')"
+if (( SYSTEMD_VER < 254 )); then
+  sed -i '/^RestartSteps=/d;/^RestartMaxDelaySec=/d' /etc/systemd/system/calpi-kiosk.service
+fi
+install -d /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/calpi.conf <<'EOF2'
+[Journal]
+Storage=persistent
+SystemMaxUse=32M
+RuntimeMaxUse=16M
+SyncIntervalSec=10m
+RateLimitIntervalSec=30s
+RateLimitBurst=2000
+EOF2
+mkdir -p /var/log/journal
+# hardware watchdog (RuntimeWatchdogSec only takes effect after a reboot)
+grep -q '^dtparam=watchdog=on' "$CONFIG" || echo 'dtparam=watchdog=on' >> "$CONFIG"
+install -d /etc/systemd/system.conf.d
+printf '[Manager]\nRuntimeWatchdogSec=15\nRebootWatchdogSec=2min\n' > /etc/systemd/system.conf.d/calpi-watchdog.conf
+# swap: never on the SD card
+if systemctl list-unit-files dphys-swapfile.service 2>/dev/null | grep -q '^dphys-swapfile'; then
+  systemctl disable --now dphys-swapfile || true
+  dphys-swapfile uninstall 2>/dev/null || true
+fi
+# fsck repair on boot; keep cmdline.txt a single line
+if ! grep -q 'fsck.repair=yes' "$CMDLINE"; then
+  sed -i '1s/[[:space:]]*$/ fsck.repair=yes/' "$CMDLINE"
+fi
+echo "    swap:  $(swapon --show --noheadings | tr '\n' ';')"
+echo "    /tmp:  $(findmnt -no FSTYPE /tmp || echo '?')   root opts: $(findmnt -no OPTIONS / )"
+systemctl restart systemd-journald || true
+
 if [[ "$LEAN" == 1 ]]; then
   echo "==> lean: disabling unused services"
   for s in bluetooth hciuart triggerhappy; do

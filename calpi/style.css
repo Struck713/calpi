@@ -69,3 +69,42 @@ button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outl
 .line.tentative .summary { font-style: italic; color: @text_dim; }
 .more { font-size: 17px; min-height: 23px; color: @text_dim; margin: 1px 8px; }
 .bar.other-month, .line.other-month, .more.other-month { opacity: 0.35; }
+
+/* --- US-22 settings shell, rows, overlays --- */
+.settings-header { padding: 24px 32px 12px 32px; min-height: 84px; }
+.settings-title  { font-size: 48px; font-weight: 300; }
+.back-button     { min-width: 88px; min-height: 72px; font-size: 28px; padding: 0 24px; }
+.header-icon     { min-width: 72px; min-height: 72px; font-size: 36px; }
+.settings .sidebar { min-width: 380px; background-color: #0d1216; padding: 16px; }
+.sidebar-item    { min-height: 88px; font-size: 30px; border-radius: 14px; margin: 4px 0; padding: 0 24px;
+                   background-image: none; background-color: transparent; }
+.sidebar-item:checked { background-color: @surface; color: @text; }
+.settings-content { padding: 32px 48px; }
+.settings-group  { background-color: @surface; border-radius: 16px; margin-bottom: 32px; }
+.settings-group-title { font-size: 24px; color: @text_dim; margin: 0 0 12px 8px; }
+.settings-row    { min-height: 88px; padding: 12px 24px; border-bottom: 1px solid alpha(@text, 0.06); }
+.row-title       { font-size: 28px; }
+.row-desc        { font-size: 20px; color: @text_dim; }
+.row-value       { font-size: 26px; color: @text_dim; }
+.row-chevron     { font-size: 40px; color: @text_dim; }
+.row-button      { min-width: 160px; min-height: 72px; font-size: 26px; border-radius: 14px; }
+.row-button.destructive, .modal-button.destructive { background-image: none; background-color: @danger; color: white; }
+switch           { min-width: 110px; min-height: 56px; }
+switch slider    { min-width: 52px; min-height: 52px; }
+.choice-button   { min-width: 110px; min-height: 72px; font-size: 24px; border-radius: 14px; }
+.choice-button:checked { background-image: none; background-color: @accent; color: @bg; }
+.stepper-button  { min-width: 88px; min-height: 72px; font-size: 36px; border-radius: 14px; }
+.stepper-value   { font-size: 28px; min-width: 140px; }
+.subpage-back    { min-width: 88px; min-height: 72px; font-size: 26px; margin: 16px 48px 0 48px; padding: 0 24px; }
+.picker-page     { padding: 16px 48px; }
+.picker-search   { min-height: 72px; font-size: 28px; }
+.picker-list     { background-color: @surface; border-radius: 16px; }
+.picker-row      { min-height: 80px; padding: 0 24px; border-bottom: 1px solid alpha(@text, 0.06); }
+.picker-label    { font-size: 28px; }
+.picker-check    { font-size: 32px; color: @accent; min-width: 40px; }
+.modal-backdrop  { background-color: alpha(black, 0.6); }
+.modal-panel     { background-color: @surface; border-radius: 24px; padding: 48px; min-width: 900px; min-height: 420px; }
+.modal-title     { font-size: 40px; }
+.modal-body      { font-size: 26px; color: @text_dim; }
+.modal-button    { min-width: 200px; min-height: 88px; font-size: 28px; border-radius: 16px; }
+.toast           { background-color: #2b3642; border-radius: 999px; padding: 18px 36px; font-size: 26px; }

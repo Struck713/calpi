@@ -8,12 +8,13 @@ After=dbus.socket systemd-logind.service
 Conflicts=getty@tty1.service
 After=getty@tty1.service
 ConditionPathExists=/dev/tty1
-# Give up restarting only if it crash-loops badly
-StartLimitIntervalSec=120
-StartLimitBurst=10
+# Never enter 'failed' because of restart limits (US-12); the crash guard handles crash loops
+StartLimitIntervalSec=0
 
 [Service]
-Type=simple
+Type=notify
+# The notifier is python, a child of cage (the main PID)
+NotifyAccess=all
 User=kiosk
 WorkingDirectory=/opt/calpi
 # -d: no client-side decorations
@@ -28,7 +29,14 @@ StateDirectoryMode=0700
 RuntimeDirectory=calpi
 RuntimeDirectoryPreserve=yes
 Restart=always
-RestartSec=3
+RestartSec=5
+# READY=1 is sent after the first painted frame; WATCHDOG=1 every 10 s from the GTK main loop
+WatchdogSec=30
+TimeoutStartSec=90
+TimeoutStopSec=10
+# systemd >= 254 only (Trixie); setup-pi.sh removes these two lines on older systemd
+RestartSteps=5
+RestartMaxDelaySec=60
 
 # Real login session on tty1 so logind hands the seat (DRM/input) to cage
 PAMName=calpi-kiosk

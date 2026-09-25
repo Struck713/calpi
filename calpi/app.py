@@ -15,6 +15,8 @@ from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets
 from calpi.inactivity import DEFAULT_RETURN_SECONDS, InactivityMonitor
 from calpi.tasks import safe_callback
 from calpi.widgets.keyboard import KeyboardDock
+from calpi.widgets.overlays import BlockingOverlay, ConfirmDialog, Toast
+from calpi.widgets.settings.shell import SettingsScreen
 from calpi.widgets.month_view import MonthView
 from calpi.widgets.util import add_style_provider
 
@@ -86,12 +88,17 @@ class MainWindow(Gtk.ApplicationWindow):
         self.cursor = CursorManager(self, self.hub)
         self.keys = KeyRouter(self, self.navigator)
         self.keyboard = KeyboardDock(self)             # US-21: one on-screen keyboard dock
+        # US-22 overlays, created after the keyboard so they sit above it
+        self.confirm = ConfirmDialog(self)
+        self.blocking = BlockingOverlay(self)
+        self.toast_widget = Toast(self)
         if check_targets_enabled():
             install_target_checker(self.navigator)
         self.month_view = MonthView(week_start=0)
         self.month_view.attach_store(app.store)         # US-07
         app.calendar_colors = self.month_view.colors
         self.navigator.add("calendar", self.month_view)
+        self.navigator.add("settings", SettingsScreen(app, self))          # US-22
         app.clock.subscribe_day_changed(self._on_day_changed)
         self.navigator.show("calendar")
         if os.environ.get("CALPI_DEV_OSK") == "1":     # dev only (US-21)
@@ -257,6 +264,11 @@ class CalpiApp(Gtk.Application):
     def _mark_stable(self):
         crashguard.mark_stable()
         log.info("crashguard: stable, start counter cleared")
+
+    def toast(self, text: str, seconds: float = 4) -> None:
+        """Show a short bottom-centre message (US-22)."""
+        if self.window is not None:
+            self.window.toast_widget.show_text(text, seconds)
 
     def _maybe_load_sample_data(self):
         if not (self.args.sample_data or os.environ.get("CALPI_SAMPLE_DATA") == "1"):

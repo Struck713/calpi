@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -125,3 +127,45 @@ def migrate(conn: sqlite3.Connection) -> None:
 def schema_version(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
     return int(row[0]) if row else 0
+
+
+def _prune_corrupt_sets(path: Path, keep: int = 2) -> None:
+    stamps = sorted({int(p.name.split(".corrupt-")[1].split("-")[0])
+                     for p in path.parent.glob(path.name + ".corrupt-*")
+                     if p.name.split(".corrupt-")[1].split("-")[0].isdigit()})
+    for ts in stamps[:-keep] if keep else stamps:
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                Path(f"{path}.corrupt-{ts}{suffix}").unlink()
+            except FileNotFoundError:
+                pass
+
+
+def recover_if_corrupt(path: Path | str | None = None) -> bool:
+    """PRAGMA quick_check; on failure move the database aside (keep the 2 newest sets).
+
+    Returns True if the database was reset (a fresh one is created on next connect()).
+    Call before the store is opened for real (US-12 D8).
+    """
+    path = Path(path) if path else default_path()
+    if not path.exists():
+        return False
+    ok = False
+    try:
+        conn = sqlite3.connect(str(path), timeout=5.0)
+        try:
+            ok = conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        ok = False
+    if ok:
+        return False
+    ts = int(time.time())
+    for suffix in ("", "-wal", "-shm"):
+        p = Path(str(path) + suffix)
+        if p.exists():
+            os.replace(p, Path(f"{path}.corrupt-{ts}{suffix}"))
+    _prune_corrupt_sets(path, keep=2)
+    log.error("event database failed integrity check; moved aside as %s.corrupt-%d", path.name, ts)
+    return True
