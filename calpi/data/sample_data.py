@@ -74,6 +74,12 @@ def sample_events(today: date, tz: ZoneInfo) -> list[Event]:
     timed(WORK, "Quarterly planning workshop with the extended leadership team and all "
                 "regional partners, including catering and travel logistics review",
           today + 3 * d, time(11, 0), today + 3 * d, time(12, 30))
+    # Overlapping trio + one early event for the week view (US-39)
+    ov = today + 4 * d
+    timed(WORK, "Design review", ov, time(9, 0), ov, time(10, 0))
+    timed(FAMILY, "Dentist (kids)", ov, time(9, 30), ov, time(11, 0))
+    timed(SCHOOL, "Pick-up", ov, time(10, 0), ov, time(10, 30))
+    timed(WORK, "Early flight check-in", ov, time(6, 0), ov, time(6, 30))
     # Previous and next months
     prev = today.replace(day=1) - timedelta(days=10)
     timed(FAMILY, "Dentist", prev, time(16, 0), prev, time(16, 45))

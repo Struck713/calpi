@@ -131,3 +131,23 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .signin-form    { padding: 16px 48px; }
 .signin-error   { font-size: 24px; color: @danger; }
 .cal-dot        { font-size: 36px; margin-right: 8px; }
+
+/* --- US-39 week view / view switcher --- */
+.view-button       { min-width: 120px; min-height: 72px; font-size: 28px; }
+.view-button.selected { background-color: @accent; color: @bg; font-weight: bold; }
+.week-title        { font-size: 52px; }
+.week-dayrow       { min-height: 70px; }
+.week-day-label    { font-size: 26px; color: @text_dim; padding-top: 14px; }
+.week-day-label.today { color: @accent; font-weight: bold; box-shadow: inset 0 -4px 0 0 @accent; }
+.week-day-label.weekend { background-color: shade(@bg, 1.15); }
+.week-allday       { border-bottom: 1px solid alpha(@text, 0.12); }
+.week-allday-row   { min-height: 26px; margin: 1px 0; min-width: 0; }
+.week-more         { font-size: 17px; min-height: 26px; color: @text_dim; margin: 1px 8px; }
+.week-timeline     { background-color: @bg; }
+/* US-23 network */
+.wifi-page         { padding: 24px 48px; }
+.wifi-picker .settings-row.unsupported { opacity: 0.45; }
+.wifi-error        { font-size: 24px; color: @danger; }
+.wifi-connect      { min-width: 200px; min-height: 88px; }
+.wifi-note         { margin: 8px 8px 24px 8px; }
+.wifi-off          { background-color: @surface; border-radius: 16px; margin-bottom: 32px; }

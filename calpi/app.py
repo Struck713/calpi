@@ -14,12 +14,15 @@ from calpi import __version__, crashguard, paths, watchdog
 from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets_enabled,
                          install_target_checker)
 from calpi.inactivity import DEFAULT_RETURN_SECONDS, InactivityMonitor
+from calpi.data import timeutil, week_layout
 from calpi.tasks import safe_callback
 from calpi.widgets.day_detail import DayDetail
 from calpi.widgets.keyboard import KeyboardDock
 from calpi.widgets.overlays import BlockingOverlay, ConfirmDialog, Toast
 from calpi.widgets.settings.shell import SettingsScreen
 from calpi.widgets.month_view import MonthView
+from calpi.widgets.view_switcher import screen_for, view_for_screen
+from calpi.widgets.week_view import WeekView
 from calpi.widgets.util import add_style_provider
 
 log = logging.getLogger("calpi.app")
@@ -110,8 +113,11 @@ class MainWindow(Gtk.ApplicationWindow):
                                     self.month_view)                        # US-09
         self.navigator.add("day", self.day_detail)
         self.navigator.add("settings", SettingsScreen(app, self))          # US-22
+        self.week_view = WeekView(week_start=app.week_start)                # US-39
+        self.week_view.attach_store(app.store, self.month_view.colors)
+        self.navigator.add("week", self.week_view)
         app.clock.subscribe_day_changed(self._on_day_changed)
-        self.navigator.show("calendar")
+        self.navigator.reset(self._default_screen(app))
         if os.environ.get("CALPI_DEV_OSK") == "1":     # dev only (US-21)
             from calpi.widgets.dev_osk_demo import DevOskDemo
             self.navigator.add("dev_osk", DevOskDemo(self))
@@ -129,6 +135,7 @@ class MainWindow(Gtk.ApplicationWindow):
     def on_data_changed(self) -> None:
         """Called after a sync/settings change (US-16, US-26, US-28): refresh what is showing."""
         self.month_view.reload()
+        self.week_view.reload()
         self.day_detail.reload()
 
     def _apply_dim(self, alpha: float) -> None:
@@ -154,6 +161,11 @@ class MainWindow(Gtk.ApplicationWindow):
                 work, on_done=done, on_error=err, name="brightness-probe"))
 
     def _on_day_changed(self, old, new):
+        wv = self.week_view
+        if wv.first_day == week_layout.week_start_of(old, wv.week_start):
+            wv.show_week(new)               # was showing the current week: follow midnight
+        else:
+            wv.refresh_today()
         mv = self.month_view
         was_current = (mv.year, mv.month) == (old.year, old.month)
         if was_current and (new.year, new.month) != (old.year, old.month):
@@ -180,11 +192,32 @@ class MainWindow(Gtk.ApplicationWindow):
             K_INACTIVITY_RETURN_SECONDS,
             lambda _k, v: self.inactivity.tracker.set_timeout(self._return_handle, v))
 
+    def _default_screen(self, app=None) -> str:
+        app = app or self.get_application()
+        from calpi.data.settings_store import K_DEFAULT_VIEW
+        if app is None or app.settings is None:
+            return "calendar"
+        return screen_for(app.settings.get(K_DEFAULT_VIEW))
+
     def _on_idle_return(self) -> None:
-        if self.navigator.current in ("calendar", "day"):
-            if self.navigator.current != "calendar":
-                self.navigator.reset("calendar")
-            self.month_view.go_today(reason="inactivity")
+        """US-08/US-39: back to the default view's current period."""
+        cur = self.navigator.current
+        if cur == "day" or view_for_screen(cur) is not None:
+            target = self._default_screen()
+            if cur != target:
+                self.navigator.reset(target)
+            self.navigator.get(target).go_today(reason="inactivity")
+
+    def show_view(self, view: str, reason: str = "switcher") -> None:
+        """Switch between Month/Week/... keeping the period aligned (US-39 D5)."""
+        cur = self.navigator.get(self.navigator.current)
+        target = self.navigator.get(screen_for(view))
+        if target is None or target is cur:
+            return
+        anchor = cur.anchor_date() if hasattr(cur, "anchor_date") else timeutil.today()
+        self.navigator.reset(screen_for(view))
+        target.show_date(anchor)
+        log.info("view: %s (reason=%s)", view, reason)
 
     def _install_dev_shortcuts(self):
         def _quit(_widget, _args, *_rest):
@@ -241,6 +274,7 @@ class CalpiApp(Gtk.Application):
         self._maybe_load_sample_data()
         from calpi.data.event_store import EventStore
         self.store = EventStore()       # the UI process's one store (US-07)
+        self.reconcile_accounts()       # US-25 D5
         from calpi.clock import ClockService
         self.clock = ClockService()
         self._apply_regional_settings()      # US-28: before the first render, so there is no flip
@@ -267,7 +301,8 @@ class CalpiApp(Gtk.Application):
         from calpi.data import formatting
         from calpi.data.settings_store import K_TIMEZONE, K_TIME_FORMAT, K_WEEK_START
         self.settings.subscribe(K_TIMEZONE, lambda _k, v: self._apply_tz(v))
-        self.settings.subscribe(K_WEEK_START, lambda _k, v: self.window.month_view.set_week_start(v))
+        self.settings.subscribe(K_WEEK_START, lambda _k, v: (self.window.month_view.set_week_start(v),
+                                                 self.window.week_view.set_week_start(v)))
         self.settings.subscribe(K_TIME_FORMAT, lambda _k, v: (
             formatting.set_time_format(v), self._refresh_views()))
 
@@ -303,7 +338,6 @@ class CalpiApp(Gtk.Application):
         if "db_reset" in self.startup_notices:
             log.error("calendar data was reset (integrity check failed); it will download again")
             mv.header.end_slot.append(Gtk.Label(label="Calendar data was reset and will download again",
-        self.reconcile_accounts()       # US-25 D5
                                                 css_classes=["safe-mode-badge"]))
         log.info("watchdog: NOTIFY_SOCKET=%s interval=%s", os.environ.get("NOTIFY_SOCKET"),
                  watchdog.watchdog_interval_s())
@@ -343,6 +377,20 @@ class CalpiApp(Gtk.Application):
     def _mark_stable(self):
         crashguard.mark_stable()
         log.info("crashguard: stable, start counter cleared")
+
+    def reconcile_accounts(self, *_a) -> None:
+        """US-25 D5: drop calendars of accounts that are no longer configured. Cheap; safe to call
+        after every sync result (register as a sync.result_callbacks subscriber)."""
+        from calpi.data import accounts
+        try:
+            n = accounts.reconcile_calendars(self.settings, self.store)
+        except Exception:
+            log.exception("account reconciliation failed")
+            return
+        if n:
+            log.info("reconciled %d orphaned calendar(s)", n)
+            if self.window is not None and hasattr(self.window, "month_view"):
+                self.window.month_view.reload(force=True)
 
     def toast(self, text: str, seconds: float = 4) -> None:
         """Show a short bottom-centre message (US-22)."""
@@ -407,20 +455,6 @@ def main(argv=None) -> int:
         log.info("calpi stopping (SIGTERM)")
         watchdog.stopping()
         app.quit()
-    def reconcile_accounts(self, *_a) -> None:
-        """US-25 D5: drop calendars of accounts that are no longer configured. Cheap; safe to call
-        after every sync result (register as a sync.result_callbacks subscriber)."""
-        from calpi.data import accounts
-        try:
-            n = accounts.reconcile_calendars(self.settings, self.store)
-        except Exception:
-            log.exception("account reconciliation failed")
-            return
-        if n:
-            log.info("reconciled %d orphaned calendar(s)", n)
-            if self.window is not None and hasattr(self.window, "month_view"):
-                self.window.month_view.reload(force=True)
-
         return GLib.SOURCE_REMOVE
     GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, _on_term)
     return app.run([])       # don't pass our argv to GTK

@@ -70,6 +70,28 @@ K_SYNC_WINDOW_BACK = "sync_window_months_back"          # US-15
 K_SYNC_WINDOW_FORWARD = "sync_window_months_forward"
 register(Key(K_SYNC_WINDOW_BACK, int, 2, lambda v: 0 <= v <= 12))
 register(Key(K_SYNC_WINDOW_FORWARD, int, 12, lambda v: 1 <= v <= 36))
+K_SYNC_INTERVAL_MINUTES = "sync_interval_minutes"        # US-16 (UI: US-27)
+SYNC_INTERVAL_CHOICES = (5, 10, 15, 30, 60, 120, 240)     # the one place; US-27 imports it
+register(Key(K_SYNC_INTERVAL_MINUTES, int, 15, lambda v: v in SYNC_INTERVAL_CHOICES))
+K_TIMEZONE = "timezone"                                 # US-28
+K_WEEK_START = "week_start"
+K_TIME_FORMAT = "time_format"
+
+
+def _valid_tz(v) -> bool:
+    if v is None:
+        return True
+    from zoneinfo import ZoneInfo
+    ZoneInfo(v)
+    return True
+
+
+register(Key(K_TIMEZONE, (str, type(None)), None, _valid_tz))
+register(Key(K_WEEK_START, int, 0, lambda v: v in (0, 5, 6)))
+register(Key(K_TIME_FORMAT, str, "24h", lambda v: v in ("24h", "12h")))
+K_DEFAULT_VIEW = "default_view"                         # US-39 (US-40 appends "agenda" to VIEWS)
+VIEWS = ("month", "week")
+register(Key(K_DEFAULT_VIEW, str, "month", lambda v: v in VIEWS))
 # Later stories append here.
 
 

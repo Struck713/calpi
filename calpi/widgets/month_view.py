@@ -12,6 +12,7 @@ from calpi.data import formatting, layout, monthmath, timeutil
 from calpi.widgets.calendar_colors import CalendarColors
 from calpi.widgets.header import Header
 from calpi.widgets.util import set_text_if_changed
+from calpi.widgets.view_switcher import ViewSwitcher
 from calpi.widgets.week_row import CAPACITY, WeekRow
 
 log = logging.getLogger("calpi.month_view")
@@ -28,6 +29,8 @@ class MonthView(Gtk.Box):
         self._last_key = None
         self.month_changed_callbacks: list[Callable[[int, int], None]] = []
         self.header = Header()
+        self.switcher = ViewSwitcher("month")          # US-39
+        self.header.start_slot.append(self.switcher)
         self.weekday_row = Gtk.Grid(column_homogeneous=True, css_classes=["weekday-row"])
         self.weekday_labels = [Gtk.Label(css_classes=["weekday-label"], hexpand=True)
                                for _ in range(7)]
@@ -108,6 +111,13 @@ class MonthView(Gtk.Box):
         self.show_month(t.year, t.month)
         log.info("nav: month -> %04d-%02d (reason=%s)", t.year, t.month, reason)
 
+    # view-switcher contract (US-39, see view_switcher.py)
+    def anchor_date(self) -> date:
+        return timeutil.today() if self.is_current_month() else date(self.year, self.month, 1)
+
+    def show_date(self, d: date) -> None:
+        self.show_month(d.year, d.month)
+
     def open_settings(self) -> None:
         root = self.get_root()
         if root is not None:
@@ -123,6 +133,10 @@ class MonthView(Gtk.Box):
             self.go_today("key")
         elif name == "s":
             self.open_settings()
+        elif name == "w":
+            root = self.get_root()
+            if root is not None and hasattr(root, "show_view"):
+                root.show_view("week", reason="key")
         else:
             return False
         return True
