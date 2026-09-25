@@ -39,6 +39,7 @@ class Key:
 
 K_SCHEMA_VERSION = "schema_version"
 K_SETUP_COMPLETED = "setup_completed"
+K_INACTIVITY_RETURN_SECONDS = "inactivity_return_seconds"
 
 REGISTRY: dict[str, Key] = {}
 
@@ -52,6 +53,7 @@ def register(key: Key) -> Key:
 
 register(Key(K_SCHEMA_VERSION, int, 1))
 register(Key(K_SETUP_COMPLETED, bool, False))
+register(Key(K_INACTIVITY_RETURN_SECONDS, int, 120, lambda v: 30 <= v <= 3600))
 # Later stories append here.
 
 
