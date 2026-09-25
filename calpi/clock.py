@@ -5,6 +5,7 @@ import logging
 
 from gi.repository import GLib
 
+from calpi import tasks
 from calpi.data import timeutil
 from calpi.data.daychange import DayChangeDetector
 
@@ -31,12 +32,18 @@ class ClockService:
         self._tz: dict[int, object] = {}
         self._next_handle = 1
         self._source = 0
+        self._registered = False
         self._schedule()
 
     def _schedule(self) -> None:
         n = timeutil.now()
         delay = (60 - n.second) * 1000 - n.microsecond // 1000 + 50
         self._source = GLib.timeout_add(max(delay, 50), self._on_timer)
+        if not self._registered:
+            self._registered = True
+            tasks.register_periodic("clock", self._source, 60)      # one per-minute timer, re-armed
+        else:
+            tasks.update_periodic("clock", self._source)
 
     def _on_timer(self):
         try:

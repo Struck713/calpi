@@ -11,6 +11,7 @@ import os
 
 from gi.repository import GLib, Gtk
 
+from calpi import tasks
 from calpi.system import wifi
 from calpi.tasks import run_in_thread, safe_callback
 from calpi.widgets.keyboard import make_password_field
@@ -167,13 +168,14 @@ class WifiPicker(Gtk.Box):
         self._visible = True
         self.scan("yes")
         if not self._timer:
-            self._timer = GLib.timeout_add_seconds(SCAN_INTERVAL_S,
-                                                   safe_callback(self._on_tick, repeat=True))
+            self._timer_name = f"wifi-scan-{id(self):x}"
+            self._timer = tasks.add_periodic_seconds(self._timer_name, SCAN_INTERVAL_S,
+                                                     safe_callback(self._on_tick, repeat=True))
 
     def on_hide(self):
         self._visible = False
         if self._timer:
-            GLib.source_remove(self._timer)
+            tasks.remove_periodic(self._timer_name)
             self._timer = 0
 
     def _on_tick(self):
@@ -602,8 +604,9 @@ class NetworkSection:
         self._visible = True
         self.refresh()
         if self.status_group is not None and not self._timer:
-            self._timer = GLib.timeout_add_seconds(STATUS_INTERVAL_S,
-                                                   safe_callback(self._on_tick, repeat=True))
+            self._timer_name = f"network-status-{id(self):x}"
+            self._timer = tasks.add_periodic_seconds(self._timer_name, STATUS_INTERVAL_S,
+                                                     safe_callback(self._on_tick, repeat=True))
         mon = getattr(self.ctx.app, "network", None)      # US-17 NetworkMonitor, when present
         cbs = getattr(mon, "callbacks", None)
         if cbs is not None and self._nm_cb is None and self.status_group is not None:
@@ -614,7 +617,7 @@ class NetworkSection:
     def on_hide(self):
         self._visible = False
         if self._timer:
-            GLib.source_remove(self._timer)
+            tasks.remove_periodic(self._timer_name)
             self._timer = 0
         mon = getattr(self.ctx.app, "network", None)
         cbs = getattr(mon, "callbacks", None)

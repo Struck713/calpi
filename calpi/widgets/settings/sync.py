@@ -7,6 +7,7 @@ from gi.repository import GLib, Gtk
 
 from calpi.data import formatting, timeutil
 from calpi.data.settings_store import K_SYNC_INTERVAL_MINUTES, SYNC_INTERVAL_CHOICES
+from calpi import tasks
 from calpi.tasks import safe_callback
 from calpi.widgets.settings.registry import SectionSpec, register_section
 from calpi.widgets.settings.rows import InfoRow, ListPickerPage, ListPickerRow, SettingsGroup
@@ -79,12 +80,12 @@ class SyncSection:
                 self._engine.state_callbacks.append(self._on_state)
         self._token = self.app.settings.subscribe(K_SYNC_INTERVAL_MINUTES, self._on_interval)
         if not self._timer:
-            self._timer = GLib.timeout_add_seconds(REFRESH_SECONDS, self._tick)
+            self._timer = tasks.add_periodic_seconds("sync-screen", REFRESH_SECONDS, self._tick)
         self._refresh()
 
     def on_hide(self) -> None:
         if self._timer:
-            GLib.source_remove(self._timer)
+            tasks.remove_periodic("sync-screen")
             self._timer = 0
         eng = self._engine
         if eng is not None:

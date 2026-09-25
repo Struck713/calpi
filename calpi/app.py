@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from gi.repository import Gdk, GLib, Gtk
 
-from calpi import __version__, crashguard, paths, perf, watchdog
+from calpi import __version__, crashguard, paths, perf, tasks, watchdog
 from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets_enabled,
                          install_target_checker)
 from calpi.inactivity import DEFAULT_RETURN_SECONDS, InactivityMonitor
@@ -290,6 +290,8 @@ class CalpiApp(Gtk.Application):
         self.clock_trust = None         # ClockTrust (US-17)
         self.problems = None            # ProblemController (US-38)
         self.weather = None             # WeatherService, created in _on_activate (US-41)
+        self.health = None              # HealthMonitor (US-37)
+        self.exit_code = 0              # US-37: the safety valve sets 75 (systemd restarts us)
         if not hasattr(self, "startup_notices"):
             self.startup_notices: list[str] = []
         self.connect("activate", self._on_activate)
@@ -333,6 +335,8 @@ class CalpiApp(Gtk.Application):
         self._setup_recovery()
         self._setup_sync()
         self._setup_weather()
+        from calpi import health
+        self.health = health.install(self)              # US-37: hourly health line + safety valve
         log.info("calpi ready version=%s build=%s state_dir=%s renderer=%s",
                  __version__, _build_stamp(), paths.state_dir(),
                  os.environ.get("GSK_RENDERER"))
@@ -341,6 +345,9 @@ class CalpiApp(Gtk.Application):
         if os.environ.get("CALPI_BENCH") == "1":          # US-36 D5: dev-only, never in normal operation
             from calpi.devtools import bench
             bench.start(self, os.environ.get("CALPI_BENCH_SCENARIOS", bench.DEFAULT_SCENARIOS))
+        if os.environ.get("CALPI_SOAK") == "1":            # US-37 D3: dev-only, never in normal operation
+            from calpi.devtools import soak
+            soak.start(self)
 
     def _store_has_events(self) -> bool:
         try:
@@ -428,8 +435,8 @@ class CalpiApp(Gtk.Application):
         # Fallback so a missing frame clock/paint can never stall startup for the full 90 s.
         GLib.timeout_add_seconds(20, _send_ready)
         # Pings ONLY from the main loop (a thread would hide a frozen UI).
-        GLib.timeout_add_seconds(watchdog.DEFAULT_PING_SECONDS,
-                                 safe_callback(watchdog.ping, repeat=True))
+        tasks.add_periodic_seconds("watchdog", watchdog.DEFAULT_PING_SECONDS,
+                                   safe_callback(watchdog.ping, repeat=True))
         GLib.timeout_add_seconds(crashguard.STABLE_S, self._mark_stable)
         crashguard.test_crash_point("render", self.safe_mode)   # stand-in until MonthView.reload exists
 
@@ -622,6 +629,8 @@ def _install_excepthooks() -> None:
 def main(argv=None) -> int:
     from calpi.logging_setup import setup_logging
     setup_logging()
+    from calpi import health
+    health.start_leakcheck()                    # US-37: tracemalloc as early as possible (dev, env-gated)
     from calpi.data.credentials import install_log_redaction
     install_log_redaction()
     args = parse_args(argv)
@@ -637,4 +646,5 @@ def main(argv=None) -> int:
         app.quit()
         return GLib.SOURCE_REMOVE
     GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, _on_term)
-    return app.run([])       # don't pass our argv to GTK
+    rc = app.run([])         # don't pass our argv to GTK
+    return app.exit_code or rc

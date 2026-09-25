@@ -87,3 +87,57 @@ def run_in_thread(work: Callable[[], Any], *,
     t = threading.Thread(target=runner, name=name, daemon=True)
     t.start()
     return t
+
+
+# --- periodic-source registry (US-37 D1) ---------------------------------------------------------
+# GLib cannot list its sources, so every REPEATING timer of the app registers itself here. The
+# hourly health line logs the count (a growing count = a leak / a duplicate timer) and the names at
+# DEBUG. One-shot timers are not registered. A timer that re-arms itself (the minute clock) registers
+# once and refreshes its id with update_periodic().
+_periodic: dict[str, int] = {}
+_periodic_interval: dict[str, float | None] = {}
+
+
+def register_periodic(name: str, source_id: int, interval_s: float | None = None) -> None:
+    """Record a repeating source. A second registration under the same name is a bug: warn."""
+    if name in _periodic:
+        log.warning("periodic source %s registered twice", name)
+    _periodic[name] = source_id
+    _periodic_interval[name] = interval_s
+
+
+def update_periodic(name: str, source_id: int) -> None:
+    """A registered source re-armed itself (new GLib id): no duplicate warning."""
+    _periodic[name] = source_id
+
+
+def unregister_periodic(name: str) -> None:
+    _periodic.pop(name, None)
+    _periodic_interval.pop(name, None)
+
+
+def periodic_sources() -> dict[str, int]:
+    return dict(_periodic)
+
+
+def periodic_wakeups_per_hour() -> dict[str, float | None]:
+    """Nominal wakeups per hour of every registered repeating source (the wakeup audit)."""
+    return {n: (3600.0 / s if s else None) for n, s in _periodic_interval.items()}
+
+
+def add_periodic_seconds(name: str, seconds: int, fn) -> int:
+    """timeout_add_seconds + register. `fn` should be safe_callback-wrapped and return CONTINUE."""
+    sid = GLib.timeout_add_seconds(seconds, fn)
+    register_periodic(name, sid, seconds)
+    return sid
+
+
+def remove_periodic(name: str) -> None:
+    """Remove a registered source from the main loop (if still there) and forget it."""
+    sid = _periodic.get(name)
+    if sid:
+        try:
+            GLib.source_remove(sid)
+        except Exception:
+            pass
+    unregister_periodic(name)

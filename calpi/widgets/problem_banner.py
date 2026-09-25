@@ -9,6 +9,7 @@ import logging
 
 from gi.repository import GLib, Gtk, Pango
 
+from calpi import tasks
 from calpi.data import messages, problem_rules, timeutil
 from calpi.widgets.util import set_text_if_changed
 
@@ -76,7 +77,7 @@ class ProblemController:
             net.callbacks.append(lambda _o, _n: self.refresh())
         if ct is not None:
             ct.callbacks.append(lambda _s: self.refresh())
-        GLib.timeout_add_seconds(60, self._tick)
+        tasks.add_periodic_seconds("problems", 60, self._tick)
         self.refresh()
 
     def _tick(self):

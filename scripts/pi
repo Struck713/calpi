@@ -9,6 +9,7 @@
 #   deps [--update]         install deps/apt-runtime.txt on the Pi (never upgrades)
 #   rollback                restore the previous deploy
 #   perf [--stress] [--during-sync] [--week]   run the US-36 benchmark driver on the Pi, print the table
+#   soak start|stop|sample|collect   US-37 soak run (dev drop-in, hourly health lines -> scratch-soak.csv, analysis)
 #   ssh [cmd...]            ssh to the Pi
 # Env: CALPI_HOST (default "calpi"; fallback "calpi.local"), CALPI_USER, CALPI_WAYLAND_DISPLAY.
 set -euo pipefail
@@ -178,6 +179,55 @@ cmd_perf() {
   echo "raw report: $out (scratch file: delete it when done)"
 }
 
+# US-37: the soak run. `start` installs a drop-in (CALPI_SOAK, CALPI_LEAKCHECK, sync interval override),
+# `stop` removes it and checks with systemctl cat. Deploys during a soak reset it: agree a code freeze.
+cmd_soak() {
+  local sub="${1:-}"; [[ $# -gt 0 ]] && shift
+  local dropin=/etc/systemd/system/$SERVICE.service.d/soak.conf
+  local raw="$ROOT/scratch-soak.log" csv="$ROOT/scratch-soak.csv" analyze="$ROOT/scripts/soak-analyze.py"
+  case "$sub" in
+    start)
+      check_conn
+      local leak=1
+      [[ "${1:-}" == "--no-leakcheck" ]] && leak=0
+      echo "==> soak drop-in: CALPI_SOAK=1 CALPI_LEAKCHECK=$leak CALPI_SYNC_INTERVAL_OVERRIDE=5 (dev only; 'scripts/pi soak stop' removes it)"
+      remote "sudo mkdir -p $(dirname $dropin) && printf '[Service]\\nEnvironment=CALPI_SOAK=1\\nEnvironment=CALPI_LEAKCHECK=$leak\\nEnvironment=CALPI_SYNC_INTERVAL_OVERRIDE=5\\n' | sudo tee $dropin >/dev/null && sudo systemctl daemon-reload"
+      restart_and_wait
+      date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/scratch-soak.started"
+      echo "soak running. Sample daily: scripts/pi soak sample. Do NOT deploy until it is finished."
+      ;;
+    stop)
+      check_conn
+      remote "sudo rm -f $dropin && sudo systemctl daemon-reload"
+      restart_and_wait
+      if remote "systemctl cat $SERVICE" | grep -E 'CALPI_SOAK|CALPI_LEAKCHECK|CALPI_SYNC_INTERVAL_OVERRIDE'; then
+        die "soak variables are still in the unit (systemctl cat above)"
+      fi
+      echo "soak drop-in removed; systemctl cat shows no soak variables"
+      ;;
+    sample)
+      check_conn
+      local since=""
+      [[ -s "$ROOT/scratch-soak.last" ]] && since="--since '$(cat "$ROOT/scratch-soak.last")'"
+      remote "journalctl -u $SERVICE -o short-iso --no-pager $since | grep -E 'health:'" >> "$raw" || true
+      sort -u "$raw" -o "$raw"
+      date '+%Y-%m-%d %H:%M:%S' > "$ROOT/scratch-soak.last"
+      /usr/bin/python3 "$analyze" from-journal "$raw" "$csv"
+      /usr/bin/python3 "$analyze" analyze "$csv" || true
+      ;;
+    collect)
+      check_conn
+      remote "journalctl -u $SERVICE -o short-iso --no-pager | grep -E 'health:|Watchdog timeout|uncaught exception|SAFE MODE|clock: day changed'" > "$raw" || true
+      /usr/bin/python3 "$analyze" from-journal "$raw" "$csv"
+      echo "NRestarts: $(remote "systemctl show -p NRestarts $SERVICE")   (must be NRestarts=0)"
+      remote "journalctl --disk-usage" || true
+      /usr/bin/python3 "$analyze" analyze "$csv" --journal "$raw" --markdown "$ROOT/scratch-soak-summary.md" || echo "(some thresholds failed)"
+      echo "raw: $raw  csv: $csv  markdown summary: $ROOT/scratch-soak-summary.md (scratch files: paste into docs/stability.md, then delete)"
+      ;;
+    *) die "usage: scripts/pi soak start [--no-leakcheck] | stop | sample | collect" ;;
+  esac
+}
+
 cmd="${1:-}"; [[ $# -gt 0 ]] && shift
 case "$cmd" in
   deploy)     cmd_deploy "$@" ;;
@@ -189,6 +239,7 @@ case "$cmd" in
   deps)       cmd_deps "$@" ;;
   rollback)   cmd_rollback ;;
   perf)       cmd_perf "$@" ;;
+  soak)       cmd_soak "$@" ;;
   ssh)        exec ssh "$HOST" "$@" ;;
   *)          sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; [[ -z "$cmd" || $cmd == -h || $cmd == --help ]] || exit 2 ;;
 esac

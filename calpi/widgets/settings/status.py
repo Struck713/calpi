@@ -10,6 +10,7 @@ from calpi.data import accounts as accounts_mod
 from calpi.data import formatting, messages, status_summary, timeutil
 from calpi.data.status_summary import StatusInputs
 from calpi.system import device_info, wifi
+from calpi import tasks
 from calpi.tasks import run_in_thread, safe_callback
 from calpi.widgets.settings.registry import SectionSpec, register_section
 from calpi.widgets.settings.rows import ButtonRow, InfoRow, SettingsGroup
@@ -109,7 +110,7 @@ class StatusSection:
         if ct is not None:
             self._sub(ct.callbacks, self._on_event)
         if not self._timer:
-            self._timer = GLib.timeout_add_seconds(TICK_SECONDS, self._tick)
+            self._timer = tasks.add_periodic_seconds("status-screen", TICK_SECONDS, self._tick)
         self._device_at = 0.0
         self._render()
         self._probe()
@@ -117,7 +118,7 @@ class StatusSection:
     def on_hide(self) -> None:
         self._visible = False
         if self._timer:
-            GLib.source_remove(self._timer)
+            tasks.remove_periodic("status-screen")
             self._timer = 0
         for lst, cb in self._subs:
             if cb in lst:

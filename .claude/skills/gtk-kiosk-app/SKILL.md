@@ -35,6 +35,7 @@ Starting point: [example_app.py](example_app.py) is a minimal, correct kiosk app
 GTK is single-threaded. **Anything that blocks the main loop freezes the screen**, and with no mouse or keyboard nobody notices until the data is stale.
 
 - Periodic work: `GLib.timeout_add_seconds(n, cb)` (coarse, CPU-friendly). Use `timeout_add` (ms) only if you need sub-second timing. The callback returns `GLib.SOURCE_CONTINUE` to repeat.
+- **Every repeating timer registers itself** (US-37): `calpi.tasks.add_periodic_seconds("name", n, safe_callback(cb, repeat=True))`, and `tasks.remove_periodic("name")` when a screen hides (or `register_periodic`/`update_periodic`/`unregister_periodic` for a self-re-arming one-shot like the clock). The hourly `health:` line logs the registry size, so a duplicate or leaked timer shows up as `sources=` growing. Screens that hold a timer or a callback subscription only while visible must remove both in `on_hide`.
 - Clock: align to the next minute boundary (see `example_app.py`). Don't tick every second unless seconds are displayed.
 - Network, disk, or anything slow runs in a **worker thread** (`threading.Thread(daemon=True)`, or one `concurrent.futures.ThreadPoolExecutor`). Hand results back with `GLib.idle_add(fn, result)`. **Never touch a widget from a worker thread.**
 - Every timer and idle callback catches its own exceptions and logs them. An uncaught exception inside a GLib callback is printed but the source may be removed, so updates silently stop.

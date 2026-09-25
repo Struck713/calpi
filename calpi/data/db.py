@@ -30,6 +30,33 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     return conn
 
 
+WAL_CHECKPOINT_BYTES = 4 * 1024 * 1024
+
+
+def wal_bytes(conn: sqlite3.Connection) -> int:
+    """Size of this database's -wal file (0 if none / in-memory)."""
+    try:
+        row = conn.execute("PRAGMA database_list").fetchall()
+        file = next((r[2] for r in row if r[1] == "main"), "")
+        return os.stat(file + "-wal").st_size if file else 0
+    except (OSError, sqlite3.Error):
+        return 0
+
+
+def checkpoint_if_large(conn: sqlite3.Connection, limit: int = WAL_CHECKPOINT_BYTES) -> bool:
+    """US-37: truncate the WAL if it is over `limit`. BUSY (a reader) is fine: next run retries."""
+    size = wal_bytes(conn)
+    if size <= limit:
+        return False
+    try:
+        r = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        log.info("db: wal was %.1f MB, checkpoint(TRUNCATE) busy=%s", size / 1e6, r[0] if r else "?")
+        return True
+    except sqlite3.Error as e:
+        log.warning("db: wal checkpoint failed: %s", e)
+        return False
+
+
 @contextmanager
 def write_txn(conn: sqlite3.Connection, bump_revision: bool = True):
     """BEGIN IMMEDIATE ... COMMIT, bumping meta.revision inside the transaction.

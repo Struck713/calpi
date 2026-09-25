@@ -64,8 +64,9 @@ class InactivityMonitor:
                  "TOUCH_UPDATE", "TOUCH_END", "KEY_PRESS", "SCROLL")
         self._activity = {getattr(Gdk.EventType, n) for n in names if hasattr(Gdk.EventType, n)}
         hub.event_hooks.append(self._on_event)
-        GLib.timeout_add_seconds(self.CHECK_INTERVAL_S,
-                                 safe_callback(self.tracker.check, repeat=True))
+        from calpi import tasks
+        tasks.add_periodic_seconds("inactivity", self.CHECK_INTERVAL_S,
+                                   safe_callback(self.tracker.check, repeat=True))
 
     def _on_event(self, event) -> None:
         if event.get_event_type() in self._activity:

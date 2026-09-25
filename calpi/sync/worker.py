@@ -154,6 +154,11 @@ def run(args, deps: Deps) -> dict:
         rev1 = store.revision()
         _record_run(store, out, args.reason, started, int((time.monotonic() - t0) * 1000), rev1 != rev0)
     finally:
+        try:
+            from calpi.data import db
+            db.checkpoint_if_large(store.conn)             # US-37: keep the WAL bounded
+        except Exception:
+            log.warning("wal checkpoint skipped", exc_info=True)
         store.close()
     return {"v": 1, "status": "done", "reason": args.reason, "started": _utc(started),
             "finished": _utc(datetime.now(timezone.utc)),

@@ -15,7 +15,7 @@ from datetime import date, datetime, time as dtime, timezone
 
 from gi.repository import Gio, GLib
 
-from calpi import paths, watchdog
+from calpi import paths, tasks, watchdog
 from calpi.data import timeutil
 from calpi.data.settings_store import (K_ACCOUNTS, K_SYNC_INTERVAL_MINUTES, K_SYNC_WINDOW_BACK,
                                        K_SYNC_WINDOW_FORWARD)
@@ -24,6 +24,14 @@ from calpi.sync.worker import RESULT_PREFIX
 from calpi.tasks import CallbackList, safe_callback
 
 log = logging.getLogger("calpi.sync_engine")
+
+
+def _interval_override_from_env() -> int:
+    """Dev-only (US-37 soak): CALPI_SYNC_INTERVAL_OVERRIDE=<minutes>; never written to settings."""
+    try:
+        return max(0, int(os.environ.get("CALPI_SYNC_INTERVAL_OVERRIDE", "0")))
+    except ValueError:
+        return 0
 
 
 @dataclass
@@ -92,6 +100,10 @@ class SyncEngine:
         self._pending: Request | None = None
         self._timer_id = 0
         self._timeout_id = 0
+        self._interval_override = _interval_override_from_env()
+        if self._interval_override:
+            log.warning("sync: CALPI_SYNC_INTERVAL_OVERRIDE active, interval %s min (dev only, settings untouched)",
+                        self._interval_override)
         self._timed_out = False
         self._debounce: dict[str, tuple[int, Request]] = {}
         self._last_end_mono: float | None = None
@@ -136,6 +148,8 @@ class SyncEngine:
             self._first_force = True
 
     def interval_minutes(self) -> int:
+        if self._interval_override:
+            return self._interval_override
         return self.app.settings.get(K_SYNC_INTERVAL_MINUTES)
 
     # --- timers ---
@@ -143,6 +157,7 @@ class SyncEngine:
         if self._timer_id:
             self._source_remove(self._timer_id)
         self._timer_id = self._timeout_add(max(1, int(seconds + 0.999)), self._on_timer)
+        tasks.update_periodic("sync-schedule", self._timer_id)      # US-37: one armed schedule timer
         self.next_run_mono = self._mono() + seconds          # US-27: read by the Sync settings section
 
     def next_run_in_seconds(self) -> float | None:
@@ -154,6 +169,7 @@ class SyncEngine:
     @safe_callback(repeat=False)
     def _on_timer(self):
         self._timer_id = 0
+        tasks.unregister_periodic("sync-schedule")
         first = self._last_end_mono is None
         self.request_sync("startup" if first else "interval", force=first and self._first_force)
 
@@ -187,6 +203,7 @@ class SyncEngine:
         if self._timer_id:                     # a manual/trigger run replaces the pending scheduled one
             self._source_remove(self._timer_id)
             self._timer_id = 0
+            tasks.unregister_periodic("sync-schedule")
         self._launch(req)
 
     def _launch(self, req: Request) -> None:
