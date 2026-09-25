@@ -148,7 +148,9 @@ class AgendaView(Gtk.Box):
 
     # ---------------------------------------------------------------- rows
     def _rebuild(self, ag: agenda.Agenda, today: date) -> None:
-        self.listbox.remove_all()
+        # ListBox.remove_all() is GTK >= 4.12; the Pi (Bookworm) has 4.8
+        while (c := self.listbox.get_first_child()) is not None:
+            self.listbox.remove(c)
         self._row_days = {}
         has = bool(ag.groups)
         self.scroller.set_visible(has)

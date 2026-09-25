@@ -87,6 +87,12 @@ echo "==> robustness (US-12)"
 SYSTEMD_VER="$(systemctl --version | awk 'NR==1{print $2}')"
 if (( SYSTEMD_VER < 254 )); then
   sed -i '/^RestartSteps=/d;/^RestartMaxDelaySec=/d' /etc/systemd/system/calpi-kiosk.service
+  # PAMName= makes logind move cage/python into a session scope, and systemd 252 silently drops
+  # sd_notify from outside the service cgroup: READY never arrives and every start times out.
+  install -d /etc/systemd/system/calpi-kiosk.service.d
+  printf '[Service]\nType=simple\nWatchdogSec=0\n' > /etc/systemd/system/calpi-kiosk.service.d/bookworm-no-notify.conf
+else
+  rm -f /etc/systemd/system/calpi-kiosk.service.d/bookworm-no-notify.conf
 fi
 install -d /etc/systemd/journald.conf.d
 cat > /etc/systemd/journald.conf.d/calpi.conf <<'EOF2'

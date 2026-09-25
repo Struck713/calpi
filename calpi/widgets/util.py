@@ -11,6 +11,16 @@ def set_visible_if_changed(widget: Gtk.Widget, visible: bool) -> None:
         widget.set_visible(visible)
 
 
+def pin_grid_columns(grid: Gtk.Grid, n: int) -> None:
+    """Give columns 1..n-1 a permanent zero-size child (column 0 is assumed occupied).
+
+    GTK 4.8 (Bookworm) gives an empty column of a homogeneous grid zero width, so a day
+    without events would collapse and shift every other day sideways.
+    """
+    for col in range(1, n):
+        grid.attach(Gtk.Box(can_target=False), col, 0, 1, 1)
+
+
 def set_class(widget: Gtk.Widget, css_class: str, on: bool) -> None:
     if on and not widget.has_css_class(css_class):
         widget.add_css_class(css_class)

@@ -21,7 +21,7 @@ from calpi.data import formatting, layout as month_layout, monthmath, timeutil, 
 from calpi.widgets.calendar_colors import CalendarColors  # noqa: E402
 from calpi.widgets.header import Header  # noqa: E402
 from calpi.widgets.swipe import attach_horizontal_swipe  # noqa: E402
-from calpi.widgets.util import set_class, set_text_if_changed  # noqa: E402
+from calpi.widgets.util import pin_grid_columns, set_class, set_text_if_changed  # noqa: E402
 from calpi.widgets.view_switcher import ViewSwitcher  # noqa: E402
 
 log = logging.getLogger("calpi.week_view")
@@ -106,6 +106,7 @@ class WeekView(Gtk.Box):
         self.strip_grid = Gtk.Grid(column_homogeneous=True, hexpand=True)
         for r in range(week_layout.ALLDAY_CAPACITY):
             self.strip_grid.attach(Gtk.Box(css_classes=["week-allday-row"]), 0, r, 1, 1)
+        pin_grid_columns(self.strip_grid, 7)
         self.strip.append(self.strip_grid)
         self._strip_used: list[Gtk.Label] = []
         self._strip_pool: list[Gtk.Label] = []

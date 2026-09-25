@@ -13,6 +13,7 @@ Library behaviour notes (icalendar 6.0.1, recurring-ical-events 3.3.3, checked b
 """
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from dataclasses import dataclass
@@ -27,6 +28,10 @@ except ImportError:                                     # D2 fallback: vendored 
     from calpi._vendor import icalendar, recurring_ical_events   # type: ignore  # noqa: F401
 
 from calpi.data.models import Event
+
+# skip_bad_series is recurring-ical-events >= 2.1; Bookworm ships 2.0.1
+_OF_KW = ({"skip_bad_series": True}
+          if "skip_bad_series" in inspect.signature(recurring_ical_events.of).parameters else {})
 
 log = logging.getLogger("calpi.sync.ical")
 
@@ -122,7 +127,8 @@ def _to_event(occ, overrides: dict, recurring_uids: set, calendar_id: str,
         end = _norm(raw_end, tz)
         if all_day and isinstance(end, datetime):
             end = end.date()
-    if end < start:
+    # recurring-ical-events 2.0.1 (Bookworm) fills a missing all-day DTEND with DTSTART
+    if end < start or (all_day and end == start):
         end = start + timedelta(days=1) if all_day else start
     uid = str(occ.get("UID", "")).strip()
     rid = overrides.get((uid, _iso(start)))
@@ -173,7 +179,7 @@ def parse_resources(blobs: Iterable[bytes], calendar_id: str,
                         overrides[(uid, _iso(_norm(s, display_tz)))] = _iso(_norm(rp.dt, display_tz))
                 elif "RRULE" in c or "RDATE" in c:
                     recurring.add(uid)
-            for occ in recurring_ical_events.of(cal, skip_bad_series=True).between(q0, q1):
+            for occ in recurring_ical_events.of(cal, **_OF_KW).between(q0, q1):
                 ev = _to_event(occ, overrides, recurring, calendar_id, display_tz, stats)
                 if ev is None or not _overlaps(ev, window, display_tz):
                     continue

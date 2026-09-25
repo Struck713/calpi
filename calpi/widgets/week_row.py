@@ -8,7 +8,7 @@ from calpi.data import formatting
 from calpi.data.layout import Line, WeekLayout
 from calpi.widgets.calendar_colors import CalendarColors
 from calpi.widgets.day_cell import DayCell
-from calpi.widgets.util import set_text_if_changed
+from calpi.widgets.util import pin_grid_columns, set_text_if_changed
 
 # px. Must equal .day-cell padding-top + .day-number margin-top + min-height in style.css
 # (4 + 4 + 44). Event content is placed below this line.
@@ -66,6 +66,7 @@ class WeekRow(Gtk.Overlay):
         # Permanent zero-width spacers give every slot row its full height even when empty.
         for slot in range(CAPACITY):
             self.content.attach(Gtk.Box(css_classes=["slot-spacer"], can_target=False), 0, slot, 1, 1)
+        pin_grid_columns(self.content, 7)
         self.add_overlay(self.content)
         self.set_clip_overlay(self.content, True)
         self.set_overflow(Gtk.Overflow.HIDDEN)
