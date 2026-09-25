@@ -15,7 +15,7 @@ window, .screen { background-color: @bg; color: @text; font-family: "DejaVu Sans
 /* --- US-06 month grid --- */
 .header        { padding: 24px 32px 12px 32px; min-height: 84px; }
 .month-title   { font-size: 64px; font-weight: 300; }
-.weekday-row   { padding: 0 0 8px 0; }
+.weekday-row   { padding: 0 0 8px 0; min-height: 56px; }
 .weekday-label { font-size: 26px; color: @text_dim; }
 .week-row      { border-top: 1px solid alpha(@text, 0.08); }
 .day-cell      { border-left: 1px solid alpha(@text, 0.08); padding: 4px 8px; }
@@ -162,10 +162,10 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .wifi-off          { background-color: @surface; border-radius: 16px; margin-bottom: 32px; }
 
 .sync-status { font-size: 20px; color: @text_faint; }
-.sync-status.error { color: @danger; }
-.refresh-button { font-size: 36px; min-width: 72px; }
 .sync-status.offline { color: @text_dim; }
 .sync-status.stale, .sync-status.clock { color: #e0a040; }
+.sync-status.error { color: @danger; }
+.refresh-button { font-size: 36px; min-width: 72px; }
 
 /* US-26 calendars section */
 .cal-dot { min-width: 28px; min-height: 28px; border-radius: 14px; }
@@ -216,3 +216,13 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .verdict-text { font-size: 40px; }
 .status-detail { font-size: 20px; color: @text_dim; margin-top: 6px; margin-bottom: 6px; }
 .status-warn { color: #e0a040; }
+
+/* US-38 problem banner (replaces the weekday row, same slot height) */
+.problem-banner { min-height: 56px; padding: 0 12px; background-color: @surface; border-left: 8px solid @text_dim; }
+.problem-banner.warning { border-left-color: #e0a040; }
+.problem-banner.error { border-left-color: @danger; }
+.problem-banner.info { border-left-color: @accent; }
+.problem-text-button { background-image: none; background-color: transparent; border: none; box-shadow: none; padding: 0 8px; min-height: 56px; }
+.problem-text { font-size: 24px; color: @text; }
+.problem-fix { min-width: 160px; min-height: 56px; font-size: 22px; padding: 0 20px; }
+.problem-dismiss { min-width: 72px; min-height: 56px; font-size: 26px; padding: 0; }

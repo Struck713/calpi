@@ -193,3 +193,16 @@ def test_app_account_status_text(store):
     ss.record_account(store.conn, "a1", at=int(time.time()), error="AUTH_FAILED", detail="x")
     fake.sync_status = ss.snapshot(store.conn)
     assert "AUTH_FAILED" in text()
+
+
+def test_failing_since_tracks_streak_start(tmp_path):
+    from calpi.data import db, sync_status as ss
+    conn = db.connect(tmp_path / "x.sqlite3")
+    ss.record_account(conn, "a", at=10, error="TIMEOUT")
+    ss.record_account(conn, "a", at=20, error="TIMEOUT")
+    a = ss.snapshot(conn).account("a")
+    assert a.consecutive_failures == 2 and a.failing_since.timestamp() == 10
+    ss.record_account(conn, "a", at=30)
+    assert ss.snapshot(conn).account("a").failing_since is None
+    ss.record_account(conn, "a", at=40, error="AUTH_FAILED")
+    assert ss.snapshot(conn).account("a").failing_since.timestamp() == 40

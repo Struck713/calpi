@@ -46,6 +46,7 @@ class AccountStatus:
     last_error_detail: str | None
     last_error_at: datetime | None
     consecutive_failures: int
+    failing_since: datetime | None = None     # US-38: start of the current failure streak
 
 
 @dataclass(frozen=True)
@@ -103,8 +104,8 @@ def record_account(conn, account_id: str, *, at: int, error=None, detail: str = 
     with db.write_txn(conn, bump_revision=False):
         conn.execute("""
             INSERT INTO account_sync_status(account_id, last_attempt_at, last_success_at,
-                last_error_code, last_error_detail, last_error_at, consecutive_failures)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                last_error_code, last_error_detail, last_error_at, consecutive_failures, failing_since)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(account_id) DO UPDATE SET
               last_attempt_at = excluded.last_attempt_at,
               last_success_at = COALESCE(excluded.last_success_at, account_sync_status.last_success_at),
@@ -112,10 +113,12 @@ def record_account(conn, account_id: str, *, at: int, error=None, detail: str = 
               last_error_detail = excluded.last_error_detail,
               last_error_at = excluded.last_error_at,
               consecutive_failures = CASE WHEN excluded.last_error_code IS NULL THEN 0
-                                     ELSE account_sync_status.consecutive_failures + 1 END
+                                     ELSE account_sync_status.consecutive_failures + 1 END,
+              failing_since = CASE WHEN excluded.last_error_code IS NULL THEN NULL
+                                   ELSE COALESCE(account_sync_status.failing_since, excluded.last_error_at) END
             """, (account_id, at, None if code else at, code,
                   sanitize_detail(detail) if code else None, at if code else None,
-                  1 if code else 0))
+                  1 if code else 0, at if code else None))
 
 
 def record_calendar(conn, calendar_id: str, *, at: int, status: str, error=None, detail: str = "",
@@ -170,10 +173,10 @@ def forget_account(conn, account_id: str) -> None:
 # --- reads (UI process) ---------------------------------------------------------------------
 
 def snapshot(conn, runs: int = 20) -> StatusSnapshot:
-    accounts = tuple(AccountStatus(r[0], _dt(r[1]), _dt(r[2]), r[3], r[4], _dt(r[5]), r[6])
+    accounts = tuple(AccountStatus(r[0], _dt(r[1]), _dt(r[2]), r[3], r[4], _dt(r[5]), r[6], _dt(r[7]))
                      for r in conn.execute(
         "SELECT account_id, last_attempt_at, last_success_at, last_error_code, last_error_detail, "
-        "last_error_at, consecutive_failures FROM account_sync_status ORDER BY account_id"))
+        "last_error_at, consecutive_failures, failing_since FROM account_sync_status ORDER BY account_id"))
     cals = tuple(CalendarStatus(
         r[0], r[1], r[2], bool(r[3]), _dt(r[4]), _dt(r[5]), r[6], r[7], r[8], _dt(r[9]), bool(r[10]),
         r[11], r[12], r[13], r[14] or 0)

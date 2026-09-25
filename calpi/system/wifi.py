@@ -203,15 +203,14 @@ def map_nmcli_error(message: str) -> str:
 
 
 def failure_message(code: str, ssid: str) -> str:
-    if code == WRONG_PASSWORD:
-        return f"Wrong password for {ssid}. Check it and try again."
-    if code == NOT_REACHABLE:
-        return f"Couldn't connect to {ssid}. Move closer to the router or try again."
-    if code == WPA3_UNSUPPORTED:
-        return "This network uses WPA3, which this device may not support."
+    """Inline/toast text for a failed connect, from the shared catalogue (US-38)."""
+    from calpi.data import messages
+    key = {WRONG_PASSWORD: "WIFI_WRONG_PASSWORD", NOT_REACHABLE: "WIFI_NOT_REACHABLE",
+           WPA3_UNSUPPORTED: "WIFI_UNSUPPORTED"}.get(code, "WIFI_FAILED")
+    text = messages.describe(key, context="form", ssid=ssid).title
     if code.startswith(FAILED + ":"):
-        return f"Couldn't connect ({code.split(':', 1)[1]})"
-    return "Couldn't connect"
+        text = text.rstrip(".") + f" ({code.split(':', 1)[1]})"
+    return text
 
 
 # ---- command builders (lists, no shell, never a password) ----

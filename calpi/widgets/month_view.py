@@ -12,6 +12,7 @@ from calpi.data import formatting, layout, monthmath, timeutil
 from calpi.weather.client import daily_text
 from calpi.widgets.calendar_colors import CalendarColors
 from calpi.widgets.header import Header
+from calpi.widgets.problem_banner import ProblemBanner
 from calpi.widgets.util import is_refresh_key, set_text_if_changed, trigger_refresh
 from calpi.widgets.view_switcher import ViewSwitcher
 from calpi.widgets.week_row import CAPACITY, WeekRow
@@ -43,7 +44,8 @@ class MonthView(Gtk.Box):
         self.week_rows = [WeekRow() for _ in range(6)]
         for w in self.week_rows:
             weeks.append(w)
-        for w in (self.header, self.weekday_row, weeks):
+        self.problem_banner = ProblemBanner()            # US-38: shares the weekday row's slot (D4)
+        for w in (self.header, self.weekday_row, self.problem_banner, weeks):
             self.append(w)
         self.btn_prev = Gtk.Button(label="\u2039", css_classes=["nav-button", "nav-arrow"],
                                    focus_on_click=False)
@@ -67,6 +69,11 @@ class MonthView(Gtk.Box):
             self.year, self.month = int(start[:4]), int(start[5:7])
         self._apply_weekday_labels()
         self.show_month(self.year, self.month)
+
+    def set_banner_visible(self, on: bool) -> None:
+        """US-38: the banner replaces the weekday-name row (same slot height, so the grid doesn't move)."""
+        if self.weekday_row.get_visible() == on:
+            self.weekday_row.set_visible(not on)
 
     def _apply_weekday_labels(self) -> None:
         for lbl, wd in zip(self.weekday_labels, monthmath.weekday_order(self.week_start)):

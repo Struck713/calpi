@@ -46,6 +46,7 @@ class Navigator:
         self._stack = stack
         self._screens: dict[str, Gtk.Widget] = {}
         self._history: list[str] = []
+        self.changed_callbacks: list = []          # US-38: called with the new screen name
 
     def add(self, name: str, widget: Gtk.Widget) -> None:
         self._screens[name] = widget
@@ -74,6 +75,11 @@ class Navigator:
         if hasattr(new, "on_show"):
             new.on_show(**params)
         log.info("screen=%s", name)
+        for cb in list(self.changed_callbacks):
+            try:
+                cb(name)
+            except Exception:
+                log.exception("navigator callback failed")
 
     def back(self, default: str = "calendar") -> None:
         target = self._history.pop() if self._history else default
@@ -275,6 +281,7 @@ class CalpiApp(Gtk.Application):
         self.status_callbacks: list = []    # US-18: called with the new snapshot
         self.network = None             # NetworkMonitor (US-17)
         self.clock_trust = None         # ClockTrust (US-17)
+        self.problems = None            # ProblemController (US-38)
         self.weather = None             # WeatherService, created in _on_activate (US-41)
         if not hasattr(self, "startup_notices"):
             self.startup_notices: list[str] = []
@@ -430,6 +437,9 @@ class CalpiApp(Gtk.Application):
         self.refresh_button = RefreshButton(self)                       # US-19: right after the indicator
         self.window.month_view.header.end_slot.insert_child_after(self.refresh_button, indicator)
         self._setup_network(indicator)
+        from calpi.widgets.problem_banner import ProblemController
+        self.problems = ProblemController(self, self.window.month_view.problem_banner, indicator)   # US-38
+        self.window.navigator.changed_callbacks.append(lambda _n: self.problems.refresh())
         self.sync.start()                                               # no-op in safe mode
 
     def _setup_network(self, indicator) -> None:
@@ -515,8 +525,10 @@ class CalpiApp(Gtk.Application):
         st = self.sync_status.account(account_id) if self.sync_status else None
         if st is None or st.last_attempt_at is None:
             return "Added"
-        if st.last_error_code:
-            return f"Sync problem ({st.last_error_code})"
+        if st.last_error_code:                                       # US-38: catalogue wording
+            from calpi.data import messages
+            code = messages.classify_account_problem(st)
+            return messages.describe(code, context="banner", provider=self._provider_names().get(account_id, "iCloud")).title
         return "Synced " + formatting.relative_datetime(st.last_success_at, timeutil.now())
 
     def reconcile_accounts(self, *_a) -> None:

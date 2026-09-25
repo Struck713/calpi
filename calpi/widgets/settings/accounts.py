@@ -11,7 +11,7 @@ from typing import Callable
 
 from gi.repository import GLib, Gtk
 
-from calpi.data import accounts
+from calpi.data import accounts, messages
 from calpi.data.credentials import Secret
 from calpi.data.models import Account
 from calpi.sync import icloud
@@ -25,47 +25,8 @@ from calpi.widgets.util import set_text_if_changed
 
 log = logging.getLogger("calpi.settings.accounts")
 
-# US-38 will move these into the shared catalogue.
-SIGNIN_MESSAGES = {
-    ErrorCode.AUTH_FAILED: "Apple didn't accept this Apple ID and app-specific password. Check both. "
-                           "App-specific passwords look like abcd-efgh-ijkl-mnop.",
-    ErrorCode.NETWORK_DOWN: "calpi isn't connected to the internet. Check Wi-Fi in Settings → Network.",
-    ErrorCode.DNS_FAILED: "calpi isn't connected to the internet. Check Wi-Fi in Settings → Network.",
-    ErrorCode.TIMEOUT: "iCloud isn't responding right now. Try again in a few minutes.",
-    ErrorCode.SERVER_ERROR: "iCloud isn't responding right now. Try again in a few minutes.",
-    ErrorCode.RATE_LIMITED: "iCloud isn't responding right now. Try again in a few minutes.",
-    ErrorCode.CLOCK_WRONG: "calpi's clock or security settings are wrong, so it can't connect securely. "
-                           "Make sure it's online so the clock can set itself, then try again.",
-    ErrorCode.TLS_ERROR: "calpi's clock or security settings are wrong, so it can't connect securely. "
-                         "Make sure it's online so the clock can set itself, then try again.",
-    "no_calendars": "Signed in, but this account has no calendars.",
-    "save_failed": "Couldn't save the account.",
-}
 NETWORK_CODES = (ErrorCode.NETWORK_DOWN, ErrorCode.DNS_FAILED)
 PROVIDER_NAMES = {"icloud": "iCloud", "caldav": "CalDAV", "ics": "Subscription"}
-
-# US-20: provider-specific overrides. Fixed texts only: never a URL, host or server detail.
-_SERVER_DOWN = "That server isn't responding, or didn't answer like a calendar server. " \
-               "Check the address and try again."
-PROVIDER_MESSAGES = {
-    "caldav": {
-        ErrorCode.AUTH_FAILED: "The server didn't accept this username and password. "
-                               "Many servers need an app password.",
-        ErrorCode.TIMEOUT: _SERVER_DOWN, ErrorCode.SERVER_ERROR: _SERVER_DOWN,
-        ErrorCode.NOT_FOUND: _SERVER_DOWN, ErrorCode.PARSE_ERROR: _SERVER_DOWN,
-        ErrorCode.RATE_LIMITED: _SERVER_DOWN,
-    },
-    "ics": {
-        ErrorCode.AUTH_FAILED: "That link isn't accepted. Copy the secret address again.",
-        ErrorCode.NOT_FOUND: "Nothing was found at that link. Copy the secret address again.",
-        ErrorCode.PARSE_ERROR: "That link didn't return a calendar. Use the secret address "
-                               "in iCal format (ending in .ics).",
-        ErrorCode.TIMEOUT: "That link isn't responding. Try again in a few minutes.",
-        ErrorCode.SERVER_ERROR: "That link isn't responding. Try again in a few minutes.",
-        ErrorCode.RATE_LIMITED: "That link isn't responding. Try again in a few minutes.",
-        ErrorCode.UNKNOWN: "Enter a link starting with https:// or webcal://.",
-    },
-}
 ICS_NOTE = ("Google updates these links only every few hours, so new events can take a while "
             "to appear. The link is a secret: anyone with it can read the calendar. calpi keeps "
             "it in its credential store and never shows it again.")
@@ -73,10 +34,10 @@ ICS_COLORS = ("#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", 
 
 
 def signin_message(e: BaseException, provider: str = "icloud") -> str:
-    if isinstance(e, SyncError):
-        return (PROVIDER_MESSAGES.get(provider, {}).get(e.code) or SIGNIN_MESSAGES.get(e.code)
-                or f"Couldn't sign in ({e.code.value}).")
-    return "Couldn't sign in (UNKNOWN)."
+    """Inline sign-in error text, from the shared catalogue (US-38, context 'form')."""
+    code = e.code.value if isinstance(e, SyncError) else "UNKNOWN"
+    return messages.describe(code, context="form", provider=PROVIDER_NAMES.get(provider, provider),
+                             provider_key=provider).title
 
 
 def _notify_changed(app) -> None:
@@ -423,7 +384,7 @@ class SignInFlow:
         self.ctx.window.blocking.hide()
         if not disc.calendars:
             self._keep_entries = False
-            self._show_error(SIGNIN_MESSAGES["no_calendars"])
+            self._show_error(messages.form_text("no_calendars"))
             return
         if self.provider == "ics":                      # one calendar, name/colour already chosen
             self._save(user, secret, disc, None)
@@ -454,7 +415,7 @@ class SignInFlow:
             log.exception("saving account failed")
             self._pop_selection()
             self._keep_entries = False
-            self._show_error(SIGNIN_MESSAGES["save_failed"])
+            self._show_error(messages.form_text("save_failed"))
             return
         finally:
             self._clear_entries()
@@ -570,6 +531,15 @@ class AccountsSection:
         g2.add(ButtonRow("Remove account", "Remove", lambda: self._remove(acc), destructive=True))
         page.append(g2)
         self.ctx.push_page(page, acc.display_name)
+
+    def open_update_password(self, account_id: str | None = None) -> None:
+        """US-38 fix action: open the account's page and start its update-password flow."""
+        accs = accounts.list_accounts(self.ctx.app.settings)
+        acc = next((a for a in accs if a.id == account_id), None) or (accs[0] if len(accs) == 1 else None)
+        if acc is None or acc.provider == "ics":
+            return
+        self._open_detail(acc)
+        self._update(acc)
 
     def _open_calendars(self) -> None:
         self.ctx.window.navigator.show("settings", section="calendars")    # US-26

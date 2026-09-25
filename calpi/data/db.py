@@ -137,7 +137,14 @@ def _v2(conn: sqlite3.Connection) -> None:
     """)
 
 
-MIGRATIONS = [_v1, _v2]
+def _v3(conn: sqlite3.Connection) -> None:
+    """US-38: when the current failure streak of an account started."""
+    conn.execute("ALTER TABLE account_sync_status ADD COLUMN failing_since INTEGER")
+    conn.execute("UPDATE account_sync_status SET failing_since = last_error_at "
+                 "WHERE consecutive_failures > 0")
+
+
+MIGRATIONS = [_v1, _v2, _v3]
 
 
 def migrate(conn: sqlite3.Connection) -> None:

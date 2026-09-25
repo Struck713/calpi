@@ -138,6 +138,9 @@ def _valid_weather(v) -> bool:
 
 
 register(Key(K_WEATHER, dict, WEATHER_DEFAULT, _valid_weather))
+K_DISMISSED_PROBLEMS = "dismissed_problems"             # US-38: {signature: dismissed_at unix seconds}
+register(Key(K_DISMISSED_PROBLEMS, dict, {},
+             lambda v: all(isinstance(k, str) and isinstance(t, (int, float)) for k, t in v.items())))
 # Later stories append here.
 
 
