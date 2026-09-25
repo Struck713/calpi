@@ -274,6 +274,7 @@ class CalpiApp(Gtk.Application):
         if "db_reset" in self.startup_notices:
             log.error("calendar data was reset (integrity check failed); it will download again")
             mv.header.end_slot.append(Gtk.Label(label="Calendar data was reset and will download again",
+        self.reconcile_accounts()       # US-25 D5
                                                 css_classes=["safe-mode-badge"]))
         log.info("watchdog: NOTIFY_SOCKET=%s interval=%s", os.environ.get("NOTIFY_SOCKET"),
                  watchdog.watchdog_interval_s())
@@ -377,6 +378,20 @@ def main(argv=None) -> int:
         log.info("calpi stopping (SIGTERM)")
         watchdog.stopping()
         app.quit()
+    def reconcile_accounts(self, *_a) -> None:
+        """US-25 D5: drop calendars of accounts that are no longer configured. Cheap; safe to call
+        after every sync result (register as a sync.result_callbacks subscriber)."""
+        from calpi.data import accounts
+        try:
+            n = accounts.reconcile_calendars(self.settings, self.store)
+        except Exception:
+            log.exception("account reconciliation failed")
+            return
+        if n:
+            log.info("reconciled %d orphaned calendar(s)", n)
+            if self.window is not None and hasattr(self.window, "month_view"):
+                self.window.month_view.reload(force=True)
+
         return GLib.SOURCE_REMOVE
     GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, _on_term)
     return app.run([])       # don't pass our argv to GTK

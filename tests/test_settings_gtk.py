@@ -61,7 +61,7 @@ def _run(env_extra):
 def test_settings_open_close_no_growth():
     r = _run({})
     assert "OK" in r.stdout, r.stdout + r.stderr
-    assert "section about shown" in r.stdout + r.stderr
+    assert "settings: section " in r.stdout + r.stderr    # first section varies as stories add more
 
 
 @pytest.mark.gtk

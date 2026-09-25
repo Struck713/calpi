@@ -122,3 +122,9 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .event-notes  { font-size: 22px; color: @text_faint; margin-top: 6px; }
 .day-empty    { font-size: 36px; color: @text_faint; }
 .day-cell:active { background-color: alpha(@accent, 0.08); }
+
+/* --- US-25 accounts --- */
+.wide-button    { min-height: 88px; font-size: 30px; border-radius: 16px; }
+.signin-form    { padding: 16px 48px; }
+.signin-error   { font-size: 24px; color: @danger; }
+.cal-dot        { font-size: 36px; margin-right: 8px; }
