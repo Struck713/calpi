@@ -81,6 +81,11 @@ class EventStore:
 
     def upsert_calendar(self, cal: Calendar) -> None:
         """Insert, or update remote_* only. Never touches user_* / hidden / sort_order of existing rows."""
+        row = self.conn.execute("SELECT remote_href, remote_name, remote_color, account_id FROM calendars"
+                                " WHERE id = ?", (cal.id,)).fetchone()
+        if row is not None and tuple(row) == (cal.remote_href, cal.remote_name,
+                                              _norm_color(cal.remote_color), cal.account_id):
+            return                       # identical: no write, so the revision (and the UI) stay put (US-16)
         with db.write_txn(self.conn):
             self.conn.execute(
                 "INSERT INTO calendars(id, account_id, remote_href, remote_name, remote_color,"
@@ -152,7 +157,23 @@ class EventStore:
 
     def apply_calendar_sync(self, calendar_id: str, events: Iterable[Event], ctag: str | None,
                             sync_token: str | None, window: tuple[datetime, datetime]) -> int:
-        """Replace events AND record ctag/token/window in one transaction (US-15 D7)."""
+        """Replace events AND record ctag/token/window in one transaction (US-15 D7).
+
+        If nothing would change (same rows, same state) nothing is written, so the revision stays
+        and the UI is not reloaded for no reason (US-16: servers without a ctag are re-read every run).
+        """
+        events = list(events)
+        unique = {(e.uid, e.recurrence_id): e for e in events}
+        new_state = (ctag, sync_token, int(window[0].timestamp()), int(window[1].timestamp()))
+        if self.sync_state(calendar_id) == new_state:
+            try:
+                old = self.conn.execute(f"SELECT {_EVENT_COLS} FROM events WHERE calendar_id = ?",
+                                        (calendar_id,)).fetchall()
+                if {tuple(r) for r in old} == {tuple(_event_to_row(e, calendar_id)) for e in unique.values()} \
+                        and len(old) == len(unique):
+                    return len(unique)
+            except Exception:
+                log.debug("unchanged-check failed; writing", exc_info=True)
         with db.write_txn(self.conn):
             n = self._replace_events_no_txn(calendar_id, events)
             self.conn.execute(
@@ -160,15 +181,15 @@ class EventStore:
                 (ctag, sync_token, int(window[0].timestamp()), int(window[1].timestamp()), calendar_id))
         return n
 
-    def calendars_for_account(self, account_id: str) -> list[Calendar]:
-        rows = self.conn.execute("SELECT * FROM calendars WHERE account_id = ? ORDER BY id",
-                                 (account_id,))
-        return [_row_to_calendar(r) for r in rows]
-
     def set_sync_token(self, calendar_id: str, token: str | None) -> None:
         """Only the sync_token column (US-20: ICS feeds keep their last-fetch time here)."""
         with db.write_txn(self.conn):
             self.conn.execute("UPDATE calendars SET sync_token=? WHERE id=?", (token, calendar_id))
+
+    def calendars_for_account(self, account_id: str) -> list[Calendar]:
+        rows = self.conn.execute("SELECT * FROM calendars WHERE account_id = ? ORDER BY id",
+                                 (account_id,))
+        return [_row_to_calendar(r) for r in rows]
 
     def sync_state(self, calendar_id: str):
         """(ctag, sync_token, window_start, window_end) as stored; all None if never synced."""
