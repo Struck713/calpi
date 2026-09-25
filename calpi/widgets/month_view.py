@@ -12,7 +12,7 @@ from calpi.data import formatting, layout, monthmath, timeutil
 from calpi.weather.client import daily_text
 from calpi.widgets.calendar_colors import CalendarColors
 from calpi.widgets.header import Header
-from calpi.widgets.util import set_text_if_changed
+from calpi.widgets.util import is_refresh_key, set_text_if_changed, trigger_refresh
 from calpi.widgets.view_switcher import ViewSwitcher
 from calpi.widgets.week_row import CAPACITY, WeekRow
 
@@ -140,6 +140,9 @@ class MonthView(Gtk.Box):
 
     def on_key(self, name: str, _state) -> bool:
         """Called by KeyRouter (US-11) while the calendar screen is showing."""
+        if is_refresh_key(name, _state):
+            trigger_refresh(self)
+            return True
         if name in ("Left", "Page_Up"):
             self.go_relative(-1, "key")
         elif name in ("Right", "Page_Down"):

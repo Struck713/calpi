@@ -9,7 +9,8 @@ from datetime import date, timedelta
 from gi.repository import Gtk, Pango
 
 from calpi.data import formatting, timeutil
-from calpi.widgets.util import exempt_scrollbars, set_text_if_changed, set_visible_if_changed
+from calpi.widgets.util import (exempt_scrollbars, is_refresh_key, set_text_if_changed, set_visible_if_changed,
+                               trigger_refresh)
 
 log = logging.getLogger("calpi.day_detail")
 
@@ -86,7 +87,9 @@ class DayDetail(Gtk.Box):
         self._built_key = None
 
     def on_key(self, name: str, _state) -> bool:
-        if name == "BackSpace":
+        if is_refresh_key(name, _state):
+            trigger_refresh(self)
+        elif name == "BackSpace":
             self.navigator.back()
         elif name == "Left":
             self.shift(-1)

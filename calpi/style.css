@@ -162,6 +162,8 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .wifi-off          { background-color: @surface; border-radius: 16px; margin-bottom: 32px; }
 
 .sync-status { font-size: 20px; color: @text_faint; }
+.sync-status.error { color: @danger; }
+.refresh-button { font-size: 36px; min-width: 72px; }
 .sync-status.offline { color: @text_dim; }
 .sync-status.stale, .sync-status.clock { color: #e0a040; }
 

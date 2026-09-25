@@ -34,3 +34,15 @@ def exempt_scrollbars(sw: Gtk.ScrolledWindow) -> Gtk.ScrolledWindow:
     sw.get_vscrollbar().add_css_class("target-exempt")
     sw.get_hscrollbar().add_css_class("target-exempt")
     return sw
+
+
+def is_refresh_key(name: str, state) -> bool:
+    """F5 or Ctrl+R (US-19)."""
+    from gi.repository import Gdk
+    return name == "F5" or (name.lower() == "r" and bool(state and state & Gdk.ModifierType.CONTROL_MASK))
+
+
+def trigger_refresh(widget) -> None:
+    app = widget.get_root().get_application() if widget.get_root() is not None else None
+    if app is not None and hasattr(app, "trigger_manual_refresh"):
+        app.trigger_manual_refresh()

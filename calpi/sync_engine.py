@@ -21,7 +21,7 @@ from calpi.data.settings_store import (K_ACCOUNTS, K_SYNC_INTERVAL_MINUTES, K_SY
                                        K_SYNC_WINDOW_FORWARD)
 from calpi.sync import retry
 from calpi.sync.worker import RESULT_PREFIX
-from calpi.tasks import safe_callback
+from calpi.tasks import CallbackList, safe_callback
 
 log = logging.getLogger("calpi.sync_engine")
 
@@ -104,8 +104,8 @@ class SyncEngine:
         self.offline = False                               # US-17: last run failed with network errors
         self._offline_since: float | None = None
         self.synced_window: tuple[datetime, datetime] | None = None
-        self.result_callbacks: list = []
-        self.state_callbacks: list = []                    # (running: bool) -> None
+        self.result_callbacks = CallbackList()
+        self.state_callbacks = CallbackList()                  # (running: bool) -> None
 
     @property
     def is_running(self) -> bool:

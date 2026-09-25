@@ -42,6 +42,28 @@ def safe_callback(fn=None, *, repeat: bool | None = None):
     return deco(fn) if fn is not None else deco
 
 
+class CallbackList(list):
+    """List of callbacks. `add` returns a handle for `remove`; plain list `append` keeps working."""
+
+    def add(self, cb):
+        self.append(cb)
+        return cb
+
+    def remove(self, handle) -> None:
+        try:
+            super().remove(handle)
+        except ValueError:
+            pass
+
+    def call(self, *args) -> None:
+        """Call every callback; an exception in one is logged and doesn't stop the others."""
+        for cb in list(self):
+            try:
+                cb(*args)
+            except Exception:
+                log.exception("callback %s failed", getattr(cb, "__qualname__", cb))
+
+
 def call_on_main(fn: Callable[..., Any], *args) -> None:
     """Schedule fn(*args) on the main loop once. Safe from any thread."""
     GLib.idle_add(safe_callback(lambda: fn(*args), repeat=False))

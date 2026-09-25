@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from gi.repository import Gdk, GLib, Gtk
@@ -21,6 +22,7 @@ from calpi.widgets.keyboard import KeyboardDock
 from calpi.widgets.overlays import BlockingOverlay, ConfirmDialog, Toast
 from calpi.widgets.settings.shell import SettingsScreen
 from calpi.widgets.month_view import MonthView
+from calpi.widgets.refresh_button import RefreshButton
 from calpi.widgets.view_switcher import screen_for, view_for_screen
 from calpi.widgets.week_view import WeekView
 from calpi.widgets.agenda_view import AgendaView
@@ -266,6 +268,8 @@ class CalpiApp(Gtk.Application):
         self.credentials = None         # CredentialStore, created in _on_activate (US-13)
         self.dimming = None             # DimController, created with the window (US-30)
         self.safe_mode = False          # US-12: crash loop detected; extras/auto-sync must check it
+        self._last_manual_ok_mono = -1e9
+        self.refresh_button = None      # US-19
         self.sync = None                # SyncEngine, created in _on_activate (US-16)
         self.sync_status = None         # StatusSnapshot (US-18), refreshed after every sync result
         self.status_callbacks: list = []    # US-18: called with the new snapshot
@@ -417,8 +421,11 @@ class CalpiApp(Gtk.Application):
         self._refresh_status()                                          # US-18: at startup
         self.sync.result_callbacks.append(self.reconcile_accounts)      # US-25 D5
         self.sync.result_callbacks.append(lambda _r: self._refresh_status())   # US-18
-        indicator = SyncIndicator(self.sync, self.clock)
+        self.sync.result_callbacks.append(self._track_manual_result)    # US-19 cooldown
+        indicator = SyncIndicator(self.sync, self.clock, provider_names=self._provider_names)
         self.window.month_view.header.end_slot.prepend(indicator)
+        self.refresh_button = RefreshButton(self)                       # US-19: right after the indicator
+        self.window.month_view.header.end_slot.insert_child_after(self.refresh_button, indicator)
         self._setup_network(indicator)
         self.sync.start()                                               # no-op in safe mode
 
@@ -435,6 +442,36 @@ class CalpiApp(Gtk.Application):
     def _on_network_change(self, old, new) -> None:
         if new.name == "ONLINE" and old.name != "ONLINE" and self.weather is not None:
             self.weather.on_network_up()
+
+    MANUAL_COOLDOWN_S = 5
+
+    def _provider_names(self) -> dict[str, str]:
+        from calpi.data.accounts import list_accounts
+        from calpi.sync import providers
+        names = {}
+        for a in list_accounts(self.settings):
+            try:
+                names[a.id] = providers.get(a.provider).display_name
+            except Exception:
+                names[a.id] = a.provider
+        return names
+
+    def _track_manual_result(self, r: dict) -> None:
+        from calpi.data import sync_text
+        if sync_text.is_manual(r) and sync_text.is_success(r):
+            self._last_manual_ok_mono = time.monotonic()
+
+    def trigger_manual_refresh(self) -> bool:
+        """US-19: sync now (normal, ctag-based). Ignored while running or right after a successful manual sync."""
+        if self.sync is None:
+            return False
+        if self.sync.is_running:
+            return False
+        if time.monotonic() - self._last_manual_ok_mono < self.MANUAL_COOLDOWN_S:
+            log.debug("sync: manual refresh ignored (just synced)")
+            return False
+        self.sync.request_sync(reason="manual", force=False)
+        return True
 
     def _setup_weather(self) -> None:
         """US-41: forecast service (off by default), header panel, day-cell forecasts."""
