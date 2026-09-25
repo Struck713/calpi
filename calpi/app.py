@@ -14,6 +14,7 @@ from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets
                          install_target_checker)
 from calpi.inactivity import DEFAULT_RETURN_SECONDS, InactivityMonitor
 from calpi.tasks import safe_callback
+from calpi.widgets.day_detail import DayDetail
 from calpi.widgets.keyboard import KeyboardDock
 from calpi.widgets.overlays import BlockingOverlay, ConfirmDialog, Toast
 from calpi.widgets.settings.shell import SettingsScreen
@@ -94,10 +95,13 @@ class MainWindow(Gtk.ApplicationWindow):
         self.toast_widget = Toast(self)
         if check_targets_enabled():
             install_target_checker(self.navigator)
-        self.month_view = MonthView(week_start=0)
+        self.month_view = MonthView(week_start=app.week_start)      # US-28
         self.month_view.attach_store(app.store)         # US-07
         app.calendar_colors = self.month_view.colors
         self.navigator.add("calendar", self.month_view)
+        self.day_detail = DayDetail(app.store, self.month_view.colors, self.navigator,
+                                    self.month_view)                        # US-09
+        self.navigator.add("day", self.day_detail)
         self.navigator.add("settings", SettingsScreen(app, self))          # US-22
         app.clock.subscribe_day_changed(self._on_day_changed)
         self.navigator.show("calendar")
@@ -114,6 +118,11 @@ class MainWindow(Gtk.ApplicationWindow):
             self._install_dev_shortcuts()
         else:
             self.fullscreen()
+
+    def on_data_changed(self) -> None:
+        """Called after a sync/settings change (US-16, US-26, US-28): refresh what is showing."""
+        self.month_view.reload()
+        self.day_detail.reload()
 
     def _on_day_changed(self, old, new):
         mv = self.month_view
@@ -167,6 +176,7 @@ class CalpiApp(Gtk.Application):
         self.window: MainWindow | None = None
         self.settings = None            # SettingsStore, created in _on_activate
         self.clock = None               # ClockService, created in _on_activate
+        self.week_start = 0             # US-28, applied from settings before the window
         self.store = None               # EventStore, created in _on_activate (US-07)
         self.calendar_colors = None     # CalendarColors, shared with later views (US-07)
         self.credentials = None         # CredentialStore, created in _on_activate (US-13)
@@ -204,7 +214,9 @@ class CalpiApp(Gtk.Application):
         self.store = EventStore()       # the UI process's one store (US-07)
         from calpi.clock import ClockService
         self.clock = ClockService()
+        self._apply_regional_settings()      # US-28: before the first render, so there is no flip
         self.window = MainWindow(self, self.args.windowed)
+        self._wire_regional_settings()
         self.window.present()
         self._setup_recovery()
         log.info("calpi ready version=%s build=%s state_dir=%s renderer=%s",
@@ -212,6 +224,43 @@ class CalpiApp(Gtk.Application):
                  os.environ.get("GSK_RENDERER"))
         if self.args.exit_after:
             GLib.timeout_add_seconds(self.args.exit_after, self._exit_for_test)
+
+    def _apply_regional_settings(self) -> None:
+        from calpi.data import formatting, timeutil
+        from calpi.data.settings_store import K_TIMEZONE, K_TIME_FORMAT, K_WEEK_START
+        timeutil.set_display_tz(self.settings.get(K_TIMEZONE))
+        formatting.set_time_format(self.settings.get(K_TIME_FORMAT))
+        self.week_start = self.settings.get(K_WEEK_START)
+        log.debug("regional: tz=%s time_format=%s week_start=%s",
+                  timeutil.display_tz().key, self.settings.get(K_TIME_FORMAT), self.week_start)
+
+    def _wire_regional_settings(self) -> None:
+        from calpi.data import formatting
+        from calpi.data.settings_store import K_TIMEZONE, K_TIME_FORMAT, K_WEEK_START
+        self.settings.subscribe(K_TIMEZONE, lambda _k, v: self._apply_tz(v))
+        self.settings.subscribe(K_WEEK_START, lambda _k, v: self.window.month_view.set_week_start(v))
+        self.settings.subscribe(K_TIME_FORMAT, lambda _k, v: (
+            formatting.set_time_format(v), self._refresh_views()))
+
+    def _refresh_views(self) -> None:
+        mv = self.window.month_view
+        if hasattr(mv, "reload"):
+            mv.reload(force=True)
+        if hasattr(self.window, "on_data_changed"):
+            self.window.on_data_changed()
+
+    def _apply_tz(self, name) -> None:
+        from calpi.data import timeutil
+        from calpi.system import timezone as system_timezone
+        timeutil.set_display_tz(name)
+        if self.clock is not None:
+            self.clock.notify_tz_changed()      # day change / grid / forced sync (US-10, US-16)
+        else:
+            self.window.month_view.refresh_today()
+        self._refresh_views()
+        if name and not os.environ.get("CALPI_NO_SYSTEM_TZ"):
+            system_timezone.set_async(
+                name, on_error=lambda e: log.warning("system tz not set: %s", e))
 
     def _setup_recovery(self) -> None:
         """US-12: banner, READY after first paint, watchdog pings from the main loop, stable timer."""

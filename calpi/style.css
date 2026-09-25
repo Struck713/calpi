@@ -108,3 +108,17 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .modal-body      { font-size: 26px; color: @text_dim; }
 .modal-button    { min-width: 200px; min-height: 88px; font-size: 28px; border-radius: 16px; }
 .toast           { background-color: #2b3642; border-radius: 999px; padding: 18px 36px; font-size: 26px; }
+
+/* --- US-09 day detail --- */
+.day-title    { font-size: 48px; font-weight: 300; }
+.day-subtitle { font-size: 24px; color: @accent; }
+.day-list     { padding: 16px 64px 48px 64px; }
+.event-row    { background-color: @surface; border-radius: 14px; padding: 16px 20px; }
+.event-row.tentative { opacity: 0.6; }
+.cal-marker   { min-width: 8px; min-height: 0; border-radius: 4px; margin: 0 20px 0 0; padding: 0; }
+.event-time   { font-size: 24px; color: @text_dim; }
+.event-title  { font-size: 34px; }
+.event-meta   { font-size: 22px; color: @text_dim; }
+.event-notes  { font-size: 22px; color: @text_faint; margin-top: 6px; }
+.day-empty    { font-size: 36px; color: @text_faint; }
+.day-cell:active { background-color: alpha(@accent, 0.08); }

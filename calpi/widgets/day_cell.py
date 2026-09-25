@@ -17,6 +17,17 @@ class DayCell(Gtk.Box):
                                 valign=Gtk.Align.START)
         self.append(self.number)
         self.date: date | None = None
+        self.activate_callback = None          # US-09: called with the date on release inside the cell
+        click = Gtk.GestureClick()
+        click.set_button(0)                    # any button; touch is emulated as button 1
+        click.connect("released", self._on_released)
+        self.add_controller(click)
+
+    def _on_released(self, _gesture, _n_press, x, y) -> None:
+        if self.date is None or self.activate_callback is None:
+            return
+        if 0 <= x <= self.get_width() and 0 <= y <= self.get_height():
+            self.activate_callback(self.date)
 
     def set_day(self, d: date, *, in_month: bool, is_today: bool, is_weekend: bool) -> None:
         self.date = d

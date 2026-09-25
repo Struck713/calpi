@@ -4,8 +4,9 @@ Always pass datetimes that are already converted to the display zone.
 """
 from __future__ import annotations
 
+import html
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from calpi.data.models import DEFAULT_CALENDAR_COLOR
 
@@ -64,3 +65,71 @@ def relative_luminance(color: str) -> float:
 def contrast_text(color: str) -> str:
     """Text colour to draw on a background of the given colour (D6)."""
     return "#0b0e11" if relative_luminance(color) > 0.45 else "#ffffff"
+
+
+# --- day detail texts (US-09) -------------------------------------------------
+
+_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+           "September", "October", "November", "December"]
+_TAG_RE = re.compile(r"<[^>]+>")
+_SPACE_RE = re.compile(r"\s+")
+
+
+def long_date(day: date) -> str:
+    """'Tuesday, 15 September 2026' (English names, independent of the OS locale)."""
+    return f"{_WEEKDAYS[day.weekday()]}, {day.day} {_MONTHS[day.month - 1]} {day.year}"
+
+
+def _short_date(day: date) -> str:
+    return f"{_WEEKDAYS[day.weekday()][:3]} {day.day}"
+
+
+def relative_day_word(day: date, today: date) -> str | None:
+    delta = (day - today).days
+    return {0: "Today", 1: "Tomorrow", -1: "Yesterday"}.get(delta)
+
+
+def time_range_text(event, day: date, tz) -> str:
+    """'All day' / '09:30 – 10:45' / '22:30 – 01:00 (+1 day)'. `day` is the displayed day."""
+    if event.all_day:
+        return "All day"
+    s = event.start.astimezone(tz)
+    e = event.end.astimezone(tz)
+    if e <= s:
+        return long_time(s)
+    text = f"{long_time(s)} – {long_time(e)}"
+    extra = (e.date() - s.date()).days
+    if extra > 0:
+        text += f" (+{extra} day{'s' if extra != 1 else ''})"
+    return text
+
+
+def _covered(event, tz) -> tuple[date, date]:
+    from calpi.data.layout import covered_days
+    return covered_days(event, tz)
+
+
+def multi_day_text(event, day: date, tz) -> str | None:
+    """'Day 2 of 3 · Mon 14 – Wed 16 Sep', or None for a one-day event."""
+    first, last = _covered(event, tz)
+    n = (last - first).days + 1
+    if n <= 1:
+        return None
+    k = min(max((day - first).days + 1, 1), n)
+    end = f"{_short_date(last)} {_MONTHS[last.month - 1][:3]}"
+    start = _short_date(first)
+    if (first.year, first.month) != (last.year, last.month):
+        start += f" {_MONTHS[first.month - 1][:3]}"
+    return f"Day {k} of {n} · {start} – {end}"
+
+
+def clean_description(text: str | None, limit: int = 300) -> str:
+    """Plain text for display: tags removed, entities unescaped, whitespace collapsed, capped."""
+    if not text:
+        return ""
+    text = html.unescape(_TAG_RE.sub(" ", text))
+    text = _SPACE_RE.sub(" ", text).strip()
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "…"
+    return text
