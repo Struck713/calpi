@@ -1,6 +1,9 @@
 import os
 import pytest
 
+# US-32: tests that don't exercise the setup wizard start straight on the calendar.
+os.environ.setdefault("CALPI_SKIP_SETUP", "1")
+
 
 def pytest_collection_modifyitems(config, items):
     if os.environ.get("CALPI_GTK_TESTS") == "1":

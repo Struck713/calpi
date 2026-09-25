@@ -10,7 +10,7 @@ from gi.repository import Gtk
 from calpi import __version__, paths
 from calpi.tasks import run_in_thread
 from calpi.widgets.settings.registry import SectionSpec, register_section
-from calpi.widgets.settings.rows import InfoRow, SettingsGroup
+from calpi.widgets.settings.rows import ButtonRow, InfoRow, SettingsGroup
 
 log = logging.getLogger("calpi.settings.about")
 
@@ -85,7 +85,21 @@ class AboutSection:
         self.system = g.add(InfoRow("System", os_pretty_name()))
         g.add(InfoRow("Data folder", str(paths.state_dir())))
         self.widget.append(g)
+        g2 = SettingsGroup("Setup")                                     # US-32
+        g2.add(ButtonRow("First-time setup", "Run setup again", self._run_setup_again,
+                         description="Your accounts and settings are kept."))
+        self.widget.append(g2)
         self._showing = False
+
+    def _run_setup_again(self) -> None:
+        self.ctx.window.confirm.ask(
+            "Run setup again?", "Your accounts and settings are kept. You can change them as you go.",
+            "Start", self._start_setup)
+
+    def _start_setup(self) -> None:
+        from calpi.data.settings_store import K_SETUP_COMPLETED, K_WIZARD_STEP
+        self.ctx.app.settings.update({K_SETUP_COMPLETED: False, K_WIZARD_STEP: None})
+        self.ctx.window.navigator.reset("wizard")
 
     def _add_zone_rows(self, g) -> None:
         """US-28: show the system zone and display zone separately when they differ."""

@@ -53,6 +53,8 @@ def register(key: Key) -> Key:
 
 register(Key(K_SCHEMA_VERSION, int, 1))
 register(Key(K_SETUP_COMPLETED, bool, False))
+K_WIZARD_STEP = "wizard_step"                           # US-32: id of the wizard step to resume at
+register(Key(K_WIZARD_STEP, (str, type(None)), None))
 register(Key(K_INACTIVITY_RETURN_SECONDS, int, 120, lambda v: 30 <= v <= 3600))
 K_BRIGHTNESS = "brightness"                             # US-29
 register(Key(K_BRIGHTNESS, int, 100, lambda v: 10 <= v <= 100))

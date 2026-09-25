@@ -121,7 +121,19 @@ class MainWindow(Gtk.ApplicationWindow):
         self.agenda_view.attach_store(app.store, self.month_view.colors)
         self.navigator.add("agenda", self.agenda_view)
         app.clock.subscribe_day_changed(self._on_day_changed)
-        self.navigator.reset(self._default_screen(app))
+        from calpi.data import accounts as accounts_mod, setup_state           # US-32
+        from calpi.data.settings_store import K_SETUP_COMPLETED
+        from calpi.widgets.wizard.wizard import SetupWizard
+        screen, mig = setup_state.decide_start_screen(
+            app.settings.get(K_SETUP_COMPLETED) or os.environ.get("CALPI_SKIP_SETUP") == "1",
+            len(accounts_mod.list_accounts(app.settings)),
+            bool(getattr(app, "safe_mode", False)))
+        if mig:
+            app.settings.update(mig)
+            log.info("setup: marked complete (existing accounts)")
+        self.navigator.add("wizard", SetupWizard(app, self))
+        self.navigator.reset(self._default_screen(app) if screen == "calendar" else screen)
+        log.info("setup: start screen=%s", screen)
         if os.environ.get("CALPI_DEV_OSK") == "1":     # dev only (US-21)
             from calpi.widgets.dev_osk_demo import DevOskDemo
             self.navigator.add("dev_osk", DevOskDemo(self))

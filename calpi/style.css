@@ -193,3 +193,15 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .agenda-sub        { font-size: 22px; color: @text_dim; }
 .agenda-now-tag    { font-size: 18px; color: @bg; background-color: @accent; border-radius: 8px; padding: 0 10px; font-weight: bold; margin-top: 4px; }
 .agenda-more-label { font-size: 24px; color: @text_dim; padding: 24px 48px; }
+
+/* US-32 setup wizard */
+.wizard-header    { padding: 24px 48px 8px 48px; min-height: 96px; }
+.wizard-progress  { font-size: 26px; color: @text_dim; }
+.wizard-hero      { font-size: 88px; font-weight: 300; }
+.wizard-lead      { font-size: 30px; color: @text; }
+.wizard-note      { font-size: 24px; color: @text_dim; }
+.wizard-banner    { font-size: 28px; color: @accent; }
+.wizard-footer    { padding: 16px 48px 24px 48px; background-color: #0d1216; }
+.wizard-button    { min-width: 200px; min-height: 88px; font-size: 30px; border-radius: 16px; }
+.wizard-button.suggested { background-image: none; background-color: @accent; color: @bg; }
+.wizard .settings-content, .wizard .settings-subpage { padding: 16px 48px; }
