@@ -122,6 +122,7 @@ class CalpiApp(Gtk.Application):
         provider = Gtk.CssProvider()
         provider.load_from_path(str(paths.app_dir() / "style.css"))
         add_style_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self._maybe_load_sample_data()
         self.window = MainWindow(self, self.args.windowed)
         self.window.present()
         log.info("calpi ready version=%s build=%s state_dir=%s renderer=%s",
@@ -129,6 +130,20 @@ class CalpiApp(Gtk.Application):
                  os.environ.get("GSK_RENDERER"))
         if self.args.exit_after:
             GLib.timeout_add_seconds(self.args.exit_after, self._exit_for_test)
+
+    def _maybe_load_sample_data(self):
+        if not (self.args.sample_data or os.environ.get("CALPI_SAMPLE_DATA") == "1"):
+            return
+        from calpi.data import sample_data
+        from calpi.data.event_store import EventStore
+        store = EventStore()
+        try:
+            if not store.list_calendars():       # only into an empty store
+                tz = sample_data._system_tz()    # TODO(US-06): use timeutil.display_tz()
+                n = sample_data.load(store, dt.datetime.now(tz).date(), tz)
+                log.info("loaded %d sample events", n)
+        finally:
+            store.close()
 
     @safe_callback(repeat=False)
     def _exit_for_test(self):
@@ -142,6 +157,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--state-dir", help="override the state directory (dev/tests)")
     p.add_argument("--exit-after", type=int, default=0, metavar="SECONDS",
                    help="log state and quit after N seconds (smoke tests)")
+    p.add_argument("--sample-data", action="store_true",
+                   help="load sample calendars/events if the store is empty (dev; or CALPI_SAMPLE_DATA=1)")
     return p.parse_args(argv)
 
 

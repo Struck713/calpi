@@ -13,5 +13,6 @@ GDK_BACKEND=broadway BROADWAY_DISPLAY="$DISPLAY_NUM" \
 [ "$rc" -eq 0 ] || { cat "$LOG"; echo "SMOKE FAIL: exit $rc"; exit 1; }
 grep -q "calpi ready" "$LOG"   || { cat "$LOG"; echo "SMOKE FAIL: no ready line"; exit 1; }
 grep -q "screen=calendar" "$LOG" || { cat "$LOG"; echo "SMOKE FAIL: calendar screen not shown"; exit 1; }
+grep -q "month_view: showing" "$LOG" || { cat "$LOG"; echo "SMOKE FAIL: no month_view line"; exit 1; }
 if grep -E "Traceback|CRITICAL|ERROR" "$LOG"; then echo "SMOKE FAIL: errors in log"; exit 1; fi
 echo "SMOKE OK"
