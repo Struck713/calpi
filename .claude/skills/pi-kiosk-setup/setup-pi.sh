@@ -9,6 +9,10 @@ APP_DIR=/opt/calpi
 KIOSK_USER=kiosk
 CMDLINE=/boot/firmware/cmdline.txt
 MODE="${MODE:-1920x1080@60D}"
+ROTATE="${ROTATE:-0}"              # 0 or 180: kernel video= rotate (US-34 D1)
+OVERSCAN_OFF="${OVERSCAN_OFF:-0}"  # 1 = disable_overscan=1 in config.txt (US-34)
+TOUCH_NAME="${TOUCH_NAME:-}"       # exact libinput device name of the touchscreen (US-34 D2)
+TOUCH_MATRIX="${TOUCH_MATRIX:-}"   # "a b c d e f"; both empty = no calibration rule
 GTK_VERSION="${GTK_VERSION:-4}"   # 4 or 3
 WIFI_COUNTRY="${WIFI_COUNTRY:-}"   # ISO 3166 alpha-2, e.g. US, GB, DE; required for Wi-Fi
 LEAN="${LEAN:-0}"                  # 1 = disable bluetooth, hciuart, triggerhappy (never avahi)
@@ -56,7 +60,13 @@ cp -n "$CMDLINE" "$CMDLINE.orig" || true
 line="$(tr -d '\n' < "$CMDLINE" | tr ' ' '\n' \
   | grep -vE '^(video=HDMI-A-1:|consoleblank=|quiet$|loglevel=|logo\.nologo$|vt\.global_cursor_default=)' \
   | tr '\n' ' ')"
-line="$line video=HDMI-A-1:${MODE} consoleblank=0 quiet loglevel=3 logo.nologo vt.global_cursor_default=0"
+VIDEO_MODE="$MODE"
+case "$ROTATE" in
+  0) ;;
+  180) VIDEO_MODE="${MODE},rotate=180" ;;
+  *) echo "ROTATE must be 0 or 180 (portrait needs a layout story)"; exit 2 ;;
+esac
+line="$line video=HDMI-A-1:${VIDEO_MODE} consoleblank=0 quiet loglevel=3 logo.nologo vt.global_cursor_default=0"
 echo "$line" | tr -s ' ' > "$CMDLINE"
 cat "$CMDLINE"
 
@@ -64,6 +74,10 @@ echo "==> config.txt"
 CONFIG=/boot/firmware/config.txt
 grep -q '^dtoverlay=vc4-kms-v3d' "$CONFIG" || echo 'dtoverlay=vc4-kms-v3d' >> "$CONFIG"
 grep -q '^disable_splash=1' "$CONFIG" || echo 'disable_splash=1' >> "$CONFIG"
+
+if [[ "$OVERSCAN_OFF" == 1 ]]; then
+  grep -q '^disable_overscan=1' "$CONFIG" || echo 'disable_overscan=1' >> "$CONFIG"
+fi
 
 if [[ "$DISABLE_BT" == 1 ]]; then
   grep -q '^dtoverlay=disable-bt' "$CONFIG" || echo 'dtoverlay=disable-bt' >> "$CONFIG"
@@ -132,6 +146,22 @@ SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
 EOF
 udevadm control --reload-rules && udevadm trigger || true
 # group changes reach the kiosk process only after a service restart
+
+echo "==> touchscreen (US-34)"
+apt-get install -y --no-install-recommends libinput-tools evtest || echo "libinput-tools/evtest unavailable (dev tools only)"
+TOUCH_RULE=/etc/udev/rules.d/99-calpi-touch.rules
+NUM='-?[0-9]+(\.[0-9]+)?'
+if [[ -n "$TOUCH_NAME" && -n "$TOUCH_MATRIX" ]]; then
+  if [[ "$TOUCH_NAME" == *'"'* ]] || ! [[ "$TOUCH_MATRIX" =~ ^[[:space:]]*(${NUM}[[:space:]]+){5}${NUM}[[:space:]]*$ ]]; then
+    echo "bad TOUCH_NAME or TOUCH_MATRIX (need six numbers)"; exit 2
+  fi
+  # shellcheck disable=SC2086
+  printf 'ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="%s", ENV{LIBINPUT_CALIBRATION_MATRIX}="%s"\n' \
+    "$TOUCH_NAME" "$(echo $TOUCH_MATRIX)" > "$TOUCH_RULE"
+  udevadm control --reload-rules && udevadm trigger --subsystem-match=input || true
+else
+  rm -f "$TOUCH_RULE"
+fi
 
 echo "==> display power management (US-30)"
 apt-get install -y --no-install-recommends wlopm wlr-randr || echo "wlopm/wlr-randr unavailable: overnight 'Turn off' falls back to backlight/DDC/black overlay"

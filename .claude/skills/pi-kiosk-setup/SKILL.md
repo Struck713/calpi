@@ -97,3 +97,16 @@ Unit notes:
 | No output when monitor powered on after Pi | Add `D` suffix to `video=` |
 | App runs but nothing visible | Take a screenshot with `grim` (see `pi-deploy`). Launching cage by hand over SSH fails because SSH sessions have no seat, so always restart the service and read the journal. |
 | Slow / tearing / high CPU | `top`, check GSK renderer (see `gtk-kiosk-app`), check `vcgencmd get_throttled` (0x0 = OK; otherwise weak PSU/heat) |
+
+## Touchscreen (US-34)
+
+`setup-pi.sh` takes optional variables, all idempotent: `ROTATE=180` (appends `,rotate=180` to the `video=` argument;
+only 0 or 180, portrait needs a layout story), `OVERSCAN_OFF=1` (`disable_overscan=1`), and the pair
+`TOUCH_NAME="<exact libinput name>" TOUCH_MATRIX="a b c d e f"` which writes
+`/etc/udev/rules.d/99-calpi-touch.rules` (`LIBINPUT_CALIBRATION_MATRIX`; both empty removes the rule). It also installs
+`libinput-tools` and `evtest` as dev tools. A 180 degree flip that the compositor does not apply to touch needs
+`-1 0 1 0 -1 1`. If kernel `rotate=` does not work with vc4, use `wlr-randr --output HDMI-A-1 --transform 180` in an
+`ExecStartPost=` instead and record which one worked. After changing the rule: `udevadm trigger` and restart the service.
+Calibrate with the dev screen (`CALPI_DEV_TOUCHTEST=1`, temporary drop-in, remove afterwards); `calpi.system.touchcal`
+has `fit_calibration` to turn measured offsets into a matrix (compose with the matrix that was active when measuring).
+Power portable touch monitors from their own supply, then check `vcgencmd get_throttled`.

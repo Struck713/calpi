@@ -146,6 +146,10 @@ class MainWindow(Gtk.ApplicationWindow):
             from calpi.widgets.dev_osk_demo import DevOskDemo
             self.navigator.add("dev_osk", DevOskDemo(self))
             self.navigator.show("dev_osk")
+        if os.environ.get("CALPI_DEV_TOUCHTEST") == "1":  # dev only (US-34)
+            from calpi.widgets.dev_touch_test import DevTouchTest
+            self.navigator.add("dev_touchtest", DevTouchTest(self))
+            self.navigator.show("dev_touchtest")
         self.inactivity = InactivityMonitor(self.hub)
         self._return_handle = self.inactivity.add_idle_callback(
             self._return_seconds(), self._on_idle_return)

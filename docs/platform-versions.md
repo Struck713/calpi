@@ -80,3 +80,27 @@ as the kiosk user with `XDG_RUNTIME_DIR=/run/user/$(id -u kiosk) WAYLAND_DISPLAY
 `wlr-randr --output HDMI-A-1 --off/--on`. Record which work reliably, whether the monitor wakes by mouse/touch while
 off, and the method the app picked (`journalctl -u calpi-kiosk | grep "display power: methods"`,
 `grep "dim: night"`). DDC (VCP D6) and wlr-randr are only used after Preview + owner confirmation.
+
+## Touchscreen (US-34)
+
+Not yet recorded: no Pi or touchscreen was reachable when US-34 was built (repo side only). Provisioning and the
+dev test screen exist; the owner and a real screen are needed for the rest. Fill in after bring-up:
+
+| Item | Value |
+|---|---|
+| Model / connection (HDMI + USB touch, or DSI) | TBD |
+| Native resolution / mode running (`wlr-randr`) | TBD (must be 1920x1080; otherwise stop, see US-34) |
+| Orientation (0 or 180) and how applied (`video=...,rotate=180` or wlr-randr transform) | TBD |
+| Overscan | TBD (`OVERSCAN_OFF=1` if borders) |
+| Input device name (exact, `libinput list-devices`) | TBD |
+| libinput capabilities | TBD (expect `touch`) |
+| Calibration matrix (`TOUCH_NAME` / `TOUCH_MATRIX`) | TBD or none |
+| Accuracy on the test screen (max / mean px, limit 12) | TBD |
+| Brightness backend / display-off methods on this screen (US-29/US-30 probes) | TBD |
+| Touch works while display is off (wakes by touch) | TBD |
+| Throttling (`vcgencmd get_throttled`) with the screen attached | TBD |
+| Finger-only walkthrough table | TBD |
+
+Collect: `cat /sys/class/drm/card*-HDMI-A-1/modes; lsusb; cat /proc/bus/input/devices; sudo libinput list-devices;
+vcgencmd get_throttled`. Accuracy test: run the app with `CALPI_DEV_TOUCHTEST=1` (temporary systemd drop-in), tap the 9
+targets, read the offsets on screen / `journalctl -u calpi-kiosk | grep touchtest`.
