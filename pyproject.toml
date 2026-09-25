@@ -1,0 +1,11 @@
+[project]
+name = "calpi"
+requires-python = ">=3.11"
+version = "0.1.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "gtk: needs a GTK display (Broadway); skipped unless CALPI_GTK_TESTS=1",
+]

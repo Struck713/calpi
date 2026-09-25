@@ -5,5 +5,7 @@
     "ghcr.io/devcontainers/features/node:1": {},
     "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
   },
-  "remoteUser": "vscode"
+  "remoteUser": "vscode",
+  "postCreateCommand": "sudo apt-get update && grep -hvE '^\\s*(#|$)' deps/apt-runtime.txt deps/apt-dev.txt | sed 's/#.*//' | xargs sudo apt-get install -y --no-install-recommends",
+  "forwardPorts": [8085]
 }

@@ -1,0 +1,13 @@
+/* calpi stylesheet - the only place colours and fonts live. GTK 4.8-compatible (no var()).
+   NO transition or animation properties anywhere (Pi 3B, software renderer). */
+@define-color bg        #101418;
+@define-color surface   #182028;
+@define-color text      #e8e8e8;
+@define-color text_dim  #9aa4ae;
+@define-color text_faint #5c6670;
+@define-color accent    #4f9dff;
+@define-color danger    #ff6b6b;
+
+window, .screen { background-color: @bg; color: @text; font-family: "DejaVu Sans"; }
+.placeholder-title { font-size: 96px; font-weight: 300; }
+.placeholder-sub   { font-size: 36px; color: @text_dim; }

@@ -1,0 +1,3 @@
+# Devcontainer-only extras
+libgtk-4-bin        # gtk4-broadwayd
+python3-pytest

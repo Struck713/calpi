@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import logging
+import os
+
+from gi.repository import Gdk, GLib, Gtk
+
+from calpi import __version__, paths
+from calpi.tasks import safe_callback
+from calpi.widgets.util import add_style_provider, set_text_if_changed
+
+log = logging.getLogger("calpi.app")
+
+
+class Navigator:
+    """Switches screens in the root Gtk.Stack and calls on_show/on_hide hooks."""
+
+    def __init__(self, stack: Gtk.Stack):
+        self._stack = stack
+        self._screens: dict[str, Gtk.Widget] = {}
+        self._history: list[str] = []
+
+    def add(self, name: str, widget: Gtk.Widget) -> None:
+        self._screens[name] = widget
+        self._stack.add_named(widget, name)
+
+    def get(self, name: str) -> Gtk.Widget | None:
+        return self._screens.get(name)
+
+    @property
+    def current(self) -> str | None:
+        return self._stack.get_visible_child_name()
+
+    def show(self, name: str, **params) -> None:
+        cur = self.current
+        if cur == name and not params:
+            return
+        if cur is not None:
+            old = self._screens[cur]
+            if hasattr(old, "on_hide"):
+                old.on_hide()
+            if cur != name:
+                self._history.append(cur)
+                del self._history[:-10]           # bounded: long uptime (US-37)
+        self._stack.set_visible_child_name(name)
+        new = self._screens[name]
+        if hasattr(new, "on_show"):
+            new.on_show(**params)
+        log.info("screen=%s", name)
+
+    def back(self, default: str = "calendar") -> None:
+        target = self._history.pop() if self._history else default
+        self.show(target)
+
+    def reset(self, name: str = "calendar") -> None:
+        self._history.clear()
+        self.show(name)
+
+
+class PlaceholderScreen(Gtk.Box):
+    """Temporary first screen; US-06 replaces it with MonthView."""
+
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER,
+                         spacing=12, css_classes=["screen"])
+        self.title = Gtk.Label(label="calpi", css_classes=["placeholder-title"])
+        self.clock = Gtk.Label(css_classes=["placeholder-sub"])
+        self.append(self.title)
+        self.append(self.clock)
+        self._tick()
+        self._schedule_next_minute()
+
+    def _schedule_next_minute(self):
+        now = dt.datetime.now()
+        delay_ms = (60 - now.second) * 1000 - now.microsecond // 1000 + 50
+        GLib.timeout_add(delay_ms, self._on_minute)
+
+    @safe_callback(repeat=False)
+    def _on_minute(self):
+        try:
+            self._tick()
+        finally:
+            self._schedule_next_minute()     # always reschedule, even if _tick failed
+
+    def _tick(self):
+        set_text_if_changed(self.clock, dt.datetime.now().strftime("%A %d %B · %H:%M"))
+
+
+class MainWindow(Gtk.ApplicationWindow):
+    def __init__(self, app: "CalpiApp", windowed: bool):
+        super().__init__(application=app, title="calpi")
+        self.set_cursor(Gdk.Cursor.new_from_name("none", None))   # US-11 refines this
+        self.overlay = Gtk.Overlay()
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE, hexpand=True, vexpand=True)
+        self.overlay.set_child(self.stack)
+        self.set_child(self.overlay)
+        self.navigator = Navigator(self.stack)
+        self.navigator.add("calendar", PlaceholderScreen())
+        self.navigator.show("calendar")
+        if windowed:
+            self.set_default_size(1920, 1080)
+            self._install_dev_shortcuts()
+        else:
+            self.fullscreen()
+
+    def _install_dev_shortcuts(self):
+        def _quit(_widget, _args, *_rest):
+            self.get_application().quit()
+            return True
+
+        ctl = Gtk.ShortcutController()
+        ctl.add_shortcut(Gtk.Shortcut.new(
+            Gtk.ShortcutTrigger.parse_string("<Control>q"),
+            Gtk.CallbackAction.new(_quit)))
+        self.add_controller(ctl)
+
+
+class CalpiApp(Gtk.Application):
+    def __init__(self, args: argparse.Namespace):
+        super().__init__(application_id="dev.calpi.Kiosk")
+        self.args = args
+        self.window: MainWindow | None = None
+        self.connect("activate", self._on_activate)
+
+    def _on_activate(self, _app):
+        if self.window is not None:          # activate can fire twice; keep one window
+            self.window.present()
+            return
+        Gtk.Settings.get_default().set_property("gtk-enable-animations", False)
+        provider = Gtk.CssProvider()
+        provider.load_from_path(str(paths.app_dir() / "style.css"))
+        add_style_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self.window = MainWindow(self, self.args.windowed)
+        self.window.present()
+        log.info("calpi ready version=%s state_dir=%s renderer=%s",
+                 __version__, paths.state_dir(), os.environ.get("GSK_RENDERER"))
+        if self.args.exit_after:
+            GLib.timeout_add_seconds(self.args.exit_after, self._exit_for_test)
+
+    @safe_callback(repeat=False)
+    def _exit_for_test(self):
+        log.info("exit-after: screen=%s", self.window.navigator.current)
+        self.quit()
+
+
+def parse_args(argv=None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(prog="calpi")
+    p.add_argument("--windowed", action="store_true", help="don't go fullscreen (dev)")
+    p.add_argument("--state-dir", help="override the state directory (dev/tests)")
+    p.add_argument("--exit-after", type=int, default=0, metavar="SECONDS",
+                   help="log state and quit after N seconds (smoke tests)")
+    return p.parse_args(argv)
+
+
+def main(argv=None) -> int:
+    from calpi.logging_setup import setup_logging
+    setup_logging()
+    args = parse_args(argv)
+    paths.set_state_dir_override(args.state_dir)
+    app = CalpiApp(args)
+    return app.run([])       # don't pass our argv to GTK
