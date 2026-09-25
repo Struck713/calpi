@@ -151,3 +151,12 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .wifi-connect      { min-width: 200px; min-height: 88px; }
 .wifi-note         { margin: 8px 8px 24px 8px; }
 .wifi-off          { background-color: @surface; border-radius: 16px; margin-bottom: 32px; }
+
+.sync-status { font-size: 20px; color: @text_faint; }
+
+/* US-26 calendars section */
+.cal-dot { min-width: 28px; min-height: 28px; border-radius: 14px; }
+.cal-row-name { font-size: 28px; }
+.swatch { min-width: 88px; min-height: 88px; border-radius: 16px; font-size: 44px; font-weight: bold; padding: 0; }
+.swatch.selected { border: 4px solid @text; }
+.cal-group-title { font-size: 22px; color: @text_dim; margin: 16px 24px 6px 24px; }

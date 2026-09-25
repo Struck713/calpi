@@ -57,6 +57,7 @@ Unit notes:
 - The unit does **not** wait for `network-online.target`: that made boot wait 30 s+ with no network. The app handles being offline itself.
 - `StateDirectory=calpi` creates `/var/lib/calpi` (kiosk, 0700) and exports `$STATE_DIRECTORY`. `RuntimeDirectory=calpi` + `RuntimeDirectoryPreserve=yes` gives `/run/calpi` (tmpfs), kept across service restarts and cleared at reboot. cage passes the environment on to the app.
 - Recorded device facts live in `docs/platform-versions.md`.
+- `setup-pi.sh` installs `/etc/polkit-1/rules.d/50-calpi-networkmanager.rules` so the `kiosk` user can scan/connect/delete Wi-Fi connections without prompts (US-23). Wi-Fi passwords go over the NM D-Bus API, never on a command line.
 
 ## Display / resolution
 
