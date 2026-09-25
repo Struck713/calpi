@@ -62,7 +62,7 @@ SCRIPT = textwrap.dedent('''
 @pytest.mark.gtk
 def test_network_section_flow():
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":6", CALPI_FAKE_WIFI="1")
-    subprocess.run("pgrep -f 'gtk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 2)", shell=True)
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 2)", shell=True)
     with tempfile.TemporaryDirectory() as d:
         r = subprocess.run(["timeout", "40", "/usr/bin/python3", "-c", SCRIPT, d], env=env,
                            capture_output=True, text=True, cwd=ROOT)

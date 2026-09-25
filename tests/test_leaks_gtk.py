@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _run_selftest(tmp_path, ticks, only=None):
     disp = os.environ.get("BROADWAY_DISPLAY", ":6")
-    subprocess.run(f"pgrep -f '[g]tk4-broadwayd {disp}' >/dev/null || "
+    subprocess.run(f"pgrep -fx 'gtk4-broadwayd {disp}' >/dev/null || "
                    f"(setsid nohup gtk4-broadwayd {disp} >/dev/null 2>&1 </dev/null & sleep 1)", shell=True)
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=disp, GSK_RENDERER="cairo",
                STATE_DIRECTORY=str(tmp_path / "st"), RUNTIME_DIRECTORY=str(tmp_path / "rt"),

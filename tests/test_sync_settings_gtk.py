@@ -31,6 +31,10 @@ SCRIPT = textwrap.dedent('''
         assert a.settings.get(K_SYNC_INTERVAL_MINUTES) == 30
         assert chooser.value.get_text() == "30 minutes"
         assert toasts == ["Calendars will refresh every 30 minutes"], toasts
+        calls = []
+        a.trigger_manual_refresh = lambda: calls.append(1) or True
+        sec.sync_now.button.emit("clicked")
+        assert calls == [1], "Sync now row must call app.trigger_manual_refresh"
         w.navigator.back()
         assert not sec._timer, "timer must stop when hidden"
         print("OK", flush=True)
@@ -44,7 +48,7 @@ SCRIPT = textwrap.dedent('''
 @pytest.mark.gtk
 def test_sync_section_pick_interval():
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":27")
-    subprocess.run("pgrep -f '[g]tk4-broadwayd :27' >/dev/null || (setsid nohup gtk4-broadwayd :27 >/dev/null 2>&1 </dev/null & sleep 1)",
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :27' >/dev/null || (setsid nohup gtk4-broadwayd :27 >/dev/null 2>&1 </dev/null & sleep 1)",
                    shell=True)
     with tempfile.TemporaryDirectory() as d:
         env.update(CALPI_STATE_DIR=d, RUNTIME_DIRECTORY=d)

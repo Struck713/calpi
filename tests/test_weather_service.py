@@ -207,3 +207,12 @@ def test_weather_setting_validation(tmp_path):
                 {**ok, "name": "x" * 101}, {**ok, "enabled": 1}, {"enabled": True}):
         with pytest.raises(ValueError):
             store.set(ss.K_WEATHER, bad)
+
+
+def test_timer_registered_in_periodic_registry(tmp_path):
+    from calpi import tasks
+    h = Harness(tmp_path)
+    h.svc.start(startup_delay=5)
+    assert "weather" in tasks.periodic_sources()
+    h.svc.stop()
+    assert "weather" not in tasks.periodic_sources()

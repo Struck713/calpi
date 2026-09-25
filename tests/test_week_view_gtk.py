@@ -57,7 +57,7 @@ SCRIPT = textwrap.dedent('''
 def test_week_view():
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":6",
                CALPI_FAKE_NOW="2026-09-15T10:00:00", CALPI_TZ="UTC")
-    subprocess.run("pgrep -f 'gtk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 1)",
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 1)",
                    shell=True)
     r = subprocess.run(["timeout", "40", "/usr/bin/python3", "-c", SCRIPT], env=env,
                        capture_output=True, text=True,

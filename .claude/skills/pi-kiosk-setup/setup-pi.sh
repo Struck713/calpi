@@ -171,7 +171,16 @@ install -d -m 0755 /etc/polkit-1/rules.d
 cat > /etc/polkit-1/rules.d/50-calpi-networkmanager.rules <<'EOF'
 // calpi: allow the kiosk user to manage networking without prompts (US-23)
 polkit.addRule(function(action, subject) {
-    if (subject.user === "kiosk" && action.id.indexOf("org.freedesktop.NetworkManager.") === 0) {
+    // Narrowed (Cleanup): only what Settings -> Network uses: scan, join/leave/forget a network,
+    // Wi-Fi on/off. Not: sharing, checkpoint/rollback, hostname, DNS, reload, enable-disable-network.
+    var allowed = [
+        "org.freedesktop.NetworkManager.network-control",
+        "org.freedesktop.NetworkManager.wifi.scan",
+        "org.freedesktop.NetworkManager.enable-disable-wifi",
+        "org.freedesktop.NetworkManager.settings.modify.system",
+        "org.freedesktop.NetworkManager.settings.modify.own"
+    ];
+    if (subject.user === "kiosk" && allowed.indexOf(action.id) !== -1) {
         return polkit.Result.YES;
     }
 });

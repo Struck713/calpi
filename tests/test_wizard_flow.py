@@ -105,7 +105,7 @@ ACCOUNT = {"id": "a1", "provider": "icloud", "username": "me@icloud.com", "displ
 def _run(script, settings, env_extra=None):
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":32",
                CALPI_NO_SYSTEM_TZ="1", CALPI_TZ="UTC", CALPI_FAKE_WIFI="1", CALPI_SKIP_SETUP="0", **(env_extra or {}))
-    subprocess.run("pgrep -f '[g]tk4-broadwayd :32' >/dev/null || "
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :32' >/dev/null || "
                    "(setsid nohup gtk4-broadwayd :32 >/dev/null 2>&1 </dev/null & sleep 1)", shell=True)
     with tempfile.TemporaryDirectory() as d:
         if settings is not None:

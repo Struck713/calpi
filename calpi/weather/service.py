@@ -12,6 +12,7 @@ from typing import Callable
 
 from gi.repository import GLib
 
+from calpi import tasks
 from calpi.data import settings_store as ss
 from calpi.tasks import run_in_thread, safe_callback
 from calpi.weather import cache, client, schedule
@@ -98,6 +99,7 @@ class WeatherService:
     def _arm(self, seconds: float) -> None:
         self._disarm()
         self._timer = self._add_timer(seconds, self._on_timer)
+        tasks.register_periodic("weather", self._timer, seconds)     # US-37 wakeup audit
 
     def _disarm(self) -> None:
         if self._timer:
@@ -106,9 +108,11 @@ class WeatherService:
             except Exception:
                 pass
             self._timer = 0
+        tasks.unregister_periodic("weather")
 
     def _on_timer(self):
         self._timer = 0
+        tasks.unregister_periodic("weather")
         self.refresh()
 
     def _on_settings(self) -> None:

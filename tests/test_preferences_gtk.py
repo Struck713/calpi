@@ -44,7 +44,7 @@ SCRIPT = textwrap.dedent('''
 def test_regional_settings_end_to_end():
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":28",
                CALPI_FAKE_NOW="2026-09-30T23:30:00+00:00", CALPI_NO_SYSTEM_TZ="1", CALPI_TZ="UTC")
-    subprocess.run("pgrep -f 'gtk4-broadwayd :28' >/dev/null || (setsid nohup gtk4-broadwayd :28 >/dev/null 2>&1 </dev/null & sleep 1)",
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :28' >/dev/null || (setsid nohup gtk4-broadwayd :28 >/dev/null 2>&1 </dev/null & sleep 1)",
                    shell=True)
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, "settings.json"), "w") as f:

@@ -45,7 +45,7 @@ def test_dimming_controller_and_panel():
     d = tempfile.mkdtemp()
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":6",
                CALPI_DIM_BOOT_DELAY_S="0", CALPI_STATE_DIR=d, CALPI_FAKE_NOW="2026-01-15T12:00:00")
-    subprocess.run("pgrep -f 'gtk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 1)",
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 1)",
                    shell=True)
     r = subprocess.run(["timeout", "40", "/usr/bin/python3", "-c", SCRIPT, d], env=env,
                        capture_output=True, text=True, cwd=ROOT)

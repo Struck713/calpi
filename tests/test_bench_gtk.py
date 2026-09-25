@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 @pytest.mark.gtk
 def test_bench_driver_runs_and_reports(tmp_path):
     disp = os.environ.get("BROADWAY_DISPLAY", ":6")
-    subprocess.run(f"pgrep -f '[g]tk4-broadwayd {disp}' >/dev/null || "
+    subprocess.run(f"pgrep -fx 'gtk4-broadwayd {disp}' >/dev/null || "
                    f"(setsid nohup gtk4-broadwayd {disp} >/dev/null 2>&1 </dev/null & sleep 1)", shell=True)
     state, run = tmp_path / "st", tmp_path / "rt"
     subprocess.run([sys.executable, "-m", "calpi.data.sample_data", "--load", "--scale", "2",

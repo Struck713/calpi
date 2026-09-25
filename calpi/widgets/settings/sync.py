@@ -10,7 +10,7 @@ from calpi.data.settings_store import K_SYNC_INTERVAL_MINUTES, SYNC_INTERVAL_CHO
 from calpi import tasks
 from calpi.tasks import safe_callback
 from calpi.widgets.settings.registry import SectionSpec, register_section
-from calpi.widgets.settings.rows import InfoRow, ListPickerPage, ListPickerRow, SettingsGroup
+from calpi.widgets.settings.rows import ButtonRow, InfoRow, ListPickerPage, ListPickerRow, SettingsGroup
 
 log = logging.getLogger("calpi.settings.sync")
 
@@ -62,6 +62,7 @@ class SyncSection:
         self.chooser = g.add(IntervalChooser(ctx))
         self.last_row = g.add(InfoRow("Last updated"))
         self.next_row = g.add(InfoRow("Next update"))
+        self.sync_now = g.add(ButtonRow("Update now", "Sync now", self._sync_now))
         root.append(g)
         root.append(Gtk.Label(
             label="calpi checks your calendars in the background. More frequent updates use a "
@@ -69,6 +70,12 @@ class SyncSection:
             css_classes=["row-desc"], xalign=0, wrap=True, margin_top=16, margin_start=16))
         self.widget = root
         self._refresh()
+
+    def _sync_now(self) -> None:
+        """US-19's manual refresh (ignored while running / right after a successful one)."""
+        trig = getattr(self.app, "trigger_manual_refresh", None)
+        if trig is not None:
+            trig()
 
     # ---- lifecycle: timers/callbacks only while visible ----
     def on_show(self, **_kw) -> None:
@@ -115,6 +122,7 @@ class SyncSection:
         if eng is None:
             return
         now = timeutil.now()
+        self.sync_now.button.set_sensitive(not eng.is_running)
         self.last_row.set_value(formatting.relative_datetime(eng.last_success_wall, now))
         self.next_row.set_value(formatting.next_update_text(
             eng.next_run_in_seconds(), eng.is_running,

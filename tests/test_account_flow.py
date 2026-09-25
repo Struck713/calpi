@@ -87,7 +87,7 @@ SCRIPT = textwrap.dedent('''
 @pytest.mark.gtk
 def test_signin_flow():
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":6")
-    subprocess.run("pgrep -f '[g]tk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 1)",
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :6' >/dev/null || (setsid nohup gtk4-broadwayd :6 >/dev/null 2>&1 </dev/null & sleep 1)",
                    shell=True)
     with tempfile.TemporaryDirectory() as d:
         env["RUNTIME_DIRECTORY"] = os.path.join(d, "run")     # own crash counter and sync lock

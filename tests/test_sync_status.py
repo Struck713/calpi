@@ -184,7 +184,7 @@ def test_app_account_status_text(store):
     pytest.importorskip("gi")
     from types import SimpleNamespace
     from calpi import app as appmod
-    fake = SimpleNamespace(sync_status=None)
+    fake = SimpleNamespace(sync_status=None, _provider_names=lambda: {})
     text = lambda: appmod.CalpiApp.account_status_text(fake, "a1")   # noqa: E731
     assert text() == "Added"
     ss.record_account(store.conn, "a1", at=int(time.time()))
@@ -192,7 +192,9 @@ def test_app_account_status_text(store):
     assert text().startswith("Synced ")
     ss.record_account(store.conn, "a1", at=int(time.time()), error="AUTH_FAILED", detail="x")
     fake.sync_status = ss.snapshot(store.conn)
-    assert "AUTH_FAILED" in text()
+    from calpi.data import messages          # US-38: catalogue wording, never the raw code
+    assert text() == messages.describe("AUTH_REVOKED", context="banner", provider="iCloud").title
+    assert "AUTH_FAILED" not in text()
 
 
 def test_failing_since_tracks_streak_start(tmp_path):

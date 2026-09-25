@@ -43,6 +43,16 @@ SCRIPT = textwrap.dedent('''
         sec._render()
         assert sec.last_verdict.level == "bad" and sec.last_verdict.fix_section == "accounts", sec.last_verdict
         assert sec.verdict_fix.get_visible() and sec.verdict.has_css_class("verdict-bad")
+        def _texts(w):
+            out = []
+            c = w.get_first_child()
+            while c is not None:
+                out.append(getattr(c, "get_label", lambda: "")() or "")
+                out += _texts(c)
+                c = c.get_next_sibling()
+            return out
+        assert "AUTH_FAILED · x" in _texts(sec.accounts_box), "small technical line (code + detail)"
+        assert sec.accounts_btn.get_visible()
         # ok state
         a.sync_status = ss.StatusSnapshot((ss.AccountStatus("a1", now, now, None, None, None, 0),), (), ())
         sec._render()
@@ -84,7 +94,7 @@ SCRIPT = textwrap.dedent('''
 def test_status_section():
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":33", CALPI_FAKE_WIFI="1",
                CALPI_NO_SYSTEM_TZ="1")
-    subprocess.run("pgrep -f '[g]tk4-broadwayd :33' >/dev/null || (setsid nohup gtk4-broadwayd :33 >/dev/null 2>&1 </dev/null & sleep 1)",
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :33' >/dev/null || (setsid nohup gtk4-broadwayd :33 >/dev/null 2>&1 </dev/null & sleep 1)",
                    shell=True)
     with tempfile.TemporaryDirectory() as d:
         env.update(CALPI_STATE_DIR=d, RUNTIME_DIRECTORY=d)

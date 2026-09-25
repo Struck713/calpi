@@ -210,6 +210,12 @@ class StatusSection:
         set_class(r.value, "status-warn", warn)
         return r
 
+    def _account_rows(self, title: str, text: str, warn: bool, tech: str) -> list[Gtk.Widget]:
+        rows = [self._row(title, text, warn)]
+        if tech:
+            rows.append(_small(tech))
+        return rows
+
     def _render(self) -> None:
         app = self.app
         now = timeutil.now()
@@ -259,7 +265,7 @@ class StatusSection:
             self.next_row.set_value(formatting.next_update_text(
                 eng.next_run_in_seconds(), eng.is_running, offline=bool(getattr(eng, "offline", False)),
                 safe_mode=bool(getattr(app, "safe_mode", False))))
-        lines: list[tuple[str, str, bool]] = []
+        lines: list[tuple[str, str, bool, str]] = []      # title, text, warn, technical line
         auth_bad = False
         failing_since = None
         failing_prov = "iCloud"
@@ -267,8 +273,12 @@ class StatusSection:
             st = snap.account(a.id) if snap else None
             p = prov.get(a.id, "iCloud")
             bad = bool(st and st.last_error_code)
-            lines.append((a.display_name or a.username, status_summary.account_line(st, now, p), bad))
-            if bad and st.last_error_code in ("AUTH_FAILED", "CREDENTIALS_UNREADABLE"):
+            problem = messages.classify_account_problem(st) if bad else None
+            tech = ""
+            if bad:                     # US-31/US-38: code + short detail only in the small dimmed line
+                tech = st.last_error_code + (f" · {st.last_error_detail}" if st.last_error_detail else "")
+            lines.append((a.display_name or a.username, status_summary.account_line(st, now, p), bad, tech))
+            if problem and messages.describe(problem, context="status", provider=p).fix_target in ("accounts", "update_password"):
                 auth_bad = True
                 failing_prov = p
             elif bad and st.consecutive_failures >= status_summary.FAILING_MIN:
@@ -278,11 +288,13 @@ class StatusSection:
             if snap:
                 for c in snap.calendars_of(a.id):
                     if c.last_error_code and not c.inherited:
-                        lines.append((f"  {c.name}", messages.describe(c.last_error_code, provider=p).title, True))
+                        ctech = c.last_error_code + (f" · {c.last_error_detail}" if c.last_error_detail else "")
+                        lines.append((f"  {c.name}", messages.describe(c.last_error_code, provider=p).title,
+                                      True, ctech))
         if not accts:
-            lines = [("Accounts", "No calendar account yet", True)]
+            lines = [("Accounts", "No calendar account yet", True, "")]
         self._rebuild(self.accounts_box, "accounts", tuple(lines),
-                      lambda: [self._row(t, s, w) for t, s, w in lines])
+                      lambda: [x for t, s, w, k in lines for x in self._account_rows(t, s, w, k)])
         set_visible_if_changed(self.accounts_btn, auth_bad or not accts)
 
         # --- device ---

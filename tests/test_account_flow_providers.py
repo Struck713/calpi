@@ -109,7 +109,7 @@ SCRIPT = textwrap.dedent('''
 @pytest.mark.gtk
 def test_provider_forms():
     env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":32")
-    subprocess.run("pgrep -f '[g]tk4-broadwayd :32' >/dev/null || (setsid nohup gtk4-broadwayd :32 >/dev/null 2>&1 </dev/null & sleep 1)",
+    subprocess.run("pgrep -fx 'gtk4-broadwayd :32' >/dev/null || (setsid nohup gtk4-broadwayd :32 >/dev/null 2>&1 </dev/null & sleep 1)",
                    shell=True)
     with tempfile.TemporaryDirectory() as d:
         r = subprocess.run(["timeout", "60", "/usr/bin/python3", "-c", SCRIPT, d], env=env,
