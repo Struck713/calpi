@@ -33,3 +33,11 @@ button:hover { background-image: none; }
 button:active { background-color: @accent; color: @bg; }
 button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outline-offset: 2px; }
 .touch-target { min-width: 72px; min-height: 72px; }
+
+/* --- US-11 input conventions --- */
+* { transition: none; animation: none; }
+button { min-width: 72px; min-height: 72px; }
+button:hover { background-image: none; }
+button:active { background-color: @accent; color: @bg; }
+button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outline-offset: 2px; }
+.touch-target { min-width: 72px; min-height: 72px; }
