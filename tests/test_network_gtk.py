@@ -117,10 +117,10 @@ FORGET_SCRIPT = textwrap.dedent('''
 
 
 @pytest.fixture(scope="module")
-def broadway31():
-    """Own broadwayd on :31 (distinct from other tests/agents); killed at module end."""
+def broadway57():
+    """Own broadwayd on :57 (distinct from other tests/agents); killed at module end."""
     import time
-    p = subprocess.Popen(["gtk4-broadwayd", ":31"], stdout=subprocess.DEVNULL,
+    p = subprocess.Popen(["gtk4-broadwayd", ":57"], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
     time.sleep(2)
     yield p
@@ -128,8 +128,8 @@ def broadway31():
 
 
 @pytest.mark.gtk
-def test_network_forget_flow(broadway31):
-    env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":31", CALPI_FAKE_WIFI="1")
+def test_network_forget_flow(broadway57):
+    env = dict(os.environ, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":57", CALPI_FAKE_WIFI="1")
     with tempfile.TemporaryDirectory() as d:
         r = subprocess.run(["timeout", "40", "/usr/bin/python3", "-c", FORGET_SCRIPT, d], env=env,
                            capture_output=True, text=True, cwd=ROOT)
