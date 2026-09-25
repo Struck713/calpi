@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sqlite3
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -162,6 +163,12 @@ def _sync_one(client, auth, store: EventStore, cid: str, rc: RemoteCalendar, win
     except SyncError as e:
         log.warning("calendar %s failed: %s %s", rc.name, e.code.value, e.detail)
         return CalendarResult(cid, rc.name, "error", error=e.code, detail=e.detail, duration_ms=ms())
+    except sqlite3.OperationalError as e:              # locked/busy: a per-calendar error
+        log.warning("calendar %s: database busy: %s", rc.name, e)
+        return CalendarResult(cid, rc.name, "error", error=ErrorCode.UNKNOWN, detail=str(e)[:200],
+                              duration_ms=ms())
+    except sqlite3.DatabaseError:
+        raise                                           # corruption: the sync process exits (US-12)
     except Exception as e:
         log.exception("calendar %s failed unexpectedly", rc.name)
         return CalendarResult(cid, rc.name, "error", error=ErrorCode.UNKNOWN, detail=str(e)[:200],
@@ -171,15 +178,6 @@ def _sync_one(client, auth, store: EventStore, cid: str, rc: RemoteCalendar, win
 def sync_account(account: Account, secret: Secret, store: EventStore,
                  window: tuple[datetime, datetime], *, force: bool = False,
                  client: HttpClient | None = None, tz: ZoneInfo | None = None) -> AccountResult:
-    if tz is None:
-        from calpi.data import timeutil
-        tz = timeutil.display_tz()
-    try:
-        if client is None:
-            from calpi.sync import providers
-            client = providers.make_client(account)
-        auth = (account.username, secret)
-        remotes = list_calendars(client, account, auth)
     """Dispatch to the account's provider (US-20)."""
     from calpi.sync import providers
     try:
@@ -193,6 +191,15 @@ def sync_caldav_account(account: Account, secret: Secret, store: EventStore,
                         window: tuple[datetime, datetime], *, force: bool = False,
                         client: HttpClient | None = None, tz: ZoneInfo | None = None) -> AccountResult:
     """Shared CalDAV loop for the icloud and caldav providers."""
+    if tz is None:
+        from calpi.data import timeutil
+        tz = timeutil.display_tz()
+    try:
+        if client is None:
+            from calpi.sync import providers
+            client = providers.make_client(account)
+        auth = (account.username, secret)
+        remotes = list_calendars(client, account, auth)
     except SyncError as e:
         return AccountResult(account.id, e.code, e.detail, [])
     seen, results = set(), []
