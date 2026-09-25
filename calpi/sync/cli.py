@@ -29,7 +29,9 @@ def _password(args) -> Secret:
         v = os.environ.get(args.password_env)
         if not v:
             raise SystemExit(f"environment variable {args.password_env} is not set")
-        return Secret(v)
+        return Secret(v.strip() if getattr(args, "provider", "") == "ics" else v)
+    if getattr(args, "provider", "icloud") == "ics":
+        return Secret(getpass.getpass("Calendar link (hidden): ").strip())
     return Secret(getpass.getpass("App-specific password: "))
 
 
@@ -42,8 +44,16 @@ def _print_discovery(d) -> None:
         print(f"  {c.name}  {c.color or '-'}  {c.href}{'  (read-only)' if c.read_only else ''}")
 
 
-def _client(args) -> HttpClient:
-    c = HttpClient(allowed_auth_hosts=icloud.ALLOWED)
+def _client(args, acc=None) -> HttpClient:
+    from calpi.data.models import Account
+    from calpi.sync import providers
+    prov = getattr(args, "provider", None) or (acc.provider if acc else "icloud")
+    if acc is None:
+        server = getattr(args, "server", None)
+        acc = Account(id="", provider=prov, username="", display_name="", server_url=
+                      __import__("calpi.sync.provider_caldav", fromlist=["x"]).normalize_server(server)
+                      if server else "", principal_url="", calendar_home_url="", created_at="")
+    c = providers.make_client(acc)
     if getattr(args, "dump_dir", None):
         out = Path(args.dump_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -102,9 +112,17 @@ def _fetch(args, settings, credentials, state, client) -> int:
         extra = (date(a[0], a[1], 1), date(ey, em, 1))
     window = fetch.compute_window(timeutil.today(), tz, settings.get(K_SYNC_WINDOW_BACK),
                                   settings.get(K_SYNC_WINDOW_FORWARD), extra)
-    client = client or _client(args)
+    client = client or _client(args, acc)
+    if args.dry_run and acc.provider == "ics":
+        print("dry-run is not supported for ics accounts", file=sys.stderr)
+        return 1
     if args.dry_run:
         return _dry_run(acc, secret, client, window, tz)
+    from calpi.sync import worker
+    lock = worker._acquire_lock()                       # one sync at a time system-wide (US-16)
+    if lock is None:
+        print("error: another sync is running", file=sys.stderr)
+        return 3
     store = EventStore(Path(state) / db.DB_NAME if state else None)
     if args.clear_sample:
         store.delete_sample_data()
@@ -145,9 +163,12 @@ def main(argv=None, settings: SettingsStore | None = None,
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("discover", "add-account"):
         p = sub.add_parser(name)
-        if name == "add-account":
-            p.add_argument("--provider", default="icloud", choices=["icloud"])
-        p.add_argument("--username", required=True)
+        p.add_argument("--provider", default="icloud", choices=["icloud", "caldav", "ics"])
+        p.add_argument("--username", help="required for icloud and caldav")
+        p.add_argument("--server", help="caldav: server address, e.g. https://cloud.example.com")
+        p.add_argument("--principal-url", help="caldav: advanced, principal or calendar-home URL")
+        p.add_argument("--name", help="ics: name of the subscription")
+        p.add_argument("--color", help="ics: colour such as '#ff8800'")
         p.add_argument("--password-env", metavar="VAR", help="DEV ONLY: read the password from this env var")
         p.add_argument("--dump-dir", help="DEV ONLY: save raw response bodies here (anonymise before sharing)")
     sub.add_parser("list-accounts")
@@ -180,11 +201,34 @@ def main(argv=None, settings: SettingsStore | None = None,
             return 0 if ok else 1
         if args.cmd == "fetch":
             return _fetch(args, settings, credentials, state, client)
+        from calpi.sync import providers
+        if args.provider != "ics" and not args.username:
+            print("error: --username is required", file=sys.stderr)
+            return 1
+        if args.provider == "caldav" and not args.server:
+            print("error: --server is required for caldav", file=sys.stderr)
+            return 1
         secret = _password(args)
-        d = icloud.discover(args.username, secret, client or _client(args))
+        fields = {"username": args.username or "", "server_url": args.server or "",
+                  "principal_url": args.principal_url or "", "name": args.name or "",
+                  "color": args.color or ""}
+        prov = providers.get(args.provider)
+        d = prov.discover(fields, secret, client or _client(args))
         _print_discovery(d)
         if args.cmd == "add-account":
-            acc = add_or_update_account(settings, credentials, args.provider, args.username, secret, d)
+            if args.provider == "icloud":
+                acc = add_or_update_account(settings, credentials, args.provider, args.username,
+                                            secret, d)
+            elif args.provider == "caldav":
+                from calpi.sync.provider_caldav import normalize_server
+                opts = {"principal_url_override": args.principal_url} if args.principal_url else {}
+                acc = providers.save_account(settings, credentials, "caldav", args.username, secret,
+                                             d, normalize_server(args.server), opts)
+            else:
+                origin = d.calendar_home_url
+                opts = {"color": args.color} if args.color else {}
+                acc = providers.save_account(settings, credentials, "ics", args.name or d.display_name,
+                                             secret, d, origin, opts)
             print(f"saved account {acc.id}")
         return 0
     except SyncError as e:

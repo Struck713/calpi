@@ -1,7 +1,7 @@
 """Plain data types for the event store. No gi imports."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 DEFAULT_CALENDAR_COLOR = "#9aa4ae"
@@ -68,6 +68,7 @@ class Account:
     principal_url: str
     calendar_home_url: str
     created_at: str          # ISO UTC
+    options: dict = field(default_factory=dict)   # US-20: provider options, e.g. {"color": "#ff8800"}
 
 
 @dataclass(frozen=True, slots=True)

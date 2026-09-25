@@ -165,6 +165,11 @@ class EventStore:
                                  (account_id,))
         return [_row_to_calendar(r) for r in rows]
 
+    def set_sync_token(self, calendar_id: str, token: str | None) -> None:
+        """Only the sync_token column (US-20: ICS feeds keep their last-fetch time here)."""
+        with db.write_txn(self.conn):
+            self.conn.execute("UPDATE calendars SET sync_token=? WHERE id=?", (token, calendar_id))
+
     def sync_state(self, calendar_id: str):
         """(ctag, sync_token, window_start, window_end) as stored; all None if never synced."""
         r = self.conn.execute("SELECT ctag, sync_token, window_start, window_end FROM calendars "

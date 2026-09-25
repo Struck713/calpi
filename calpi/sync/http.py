@@ -82,18 +82,28 @@ def parse_retry_after(value: str | None) -> int | None:
         return None
 
 
-def host_allowed(url: str, allowed: tuple[str, ...]) -> bool:
+_LOCAL = ("localhost", "127.0.0.1", "::1")
+
+
+def host_allowed(url: str, allowed: tuple[str, ...], exact: bool = False,
+                 insecure_localhost: bool = False) -> bool:
     parts = urlsplit(url)
-    if parts.scheme != "https" or not parts.hostname:
+    if not parts.hostname:
         return False
     host = parts.hostname.lower()
-    return any(host == a or host.endswith("." + a) for a in allowed)
+    if parts.scheme != "https" and not (insecure_localhost and parts.scheme == "http"
+                                        and host in _LOCAL):
+        return False
+    return any(host == a or (not exact and host.endswith("." + a)) for a in allowed)
 
 
 class HttpClient:
     def __init__(self, timeout: float = 20, max_bytes: int = 20_000_000,
                  user_agent: str | None = None, allowed_auth_hosts: tuple[str, ...] = (),
-                 transport: Transport | None = None):
+                 transport: Transport | None = None, exact_auth_hosts: bool = False,
+                 allow_insecure_localhost: bool = False):
+        self.exact_auth_hosts = exact_auth_hosts              # US-20: no suffix matching
+        self.allow_insecure_localhost = allow_insecure_localhost   # tests only
         self.timeout = timeout
         self.max_bytes = max_bytes
         self.user_agent = user_agent or f"calpi/{__version__}"
@@ -101,13 +111,14 @@ class HttpClient:
         self._transport = transport or _urllib_transport(timeout, max_bytes)
 
     def request(self, method: str, url: str, *, body: bytes | None = None,
-                headers: dict | None = None, auth: "tuple[str, Secret] | None" = None) -> Response:
+                headers: dict | None = None, auth: "tuple[str, Secret] | None" = None,
+                ok_statuses: tuple[int, ...] = ()) -> Response:
         for _hop in range(MAX_REDIRECTS + 1):
             hdrs = {"User-Agent": self.user_agent}
             if body is not None:
                 hdrs["Content-Type"] = "application/xml; charset=utf-8"
             hdrs.update(headers or {})
-            if auth is not None and host_allowed(url, self.allowed_auth_hosts):
+            if auth is not None and self._allowed(url):
                 raw = f"{auth[0]}:{auth[1].reveal()}".encode("utf-8")
                 hdrs["Authorization"] = "Basic " + base64.b64encode(raw).decode("ascii")
             try:
@@ -122,15 +133,22 @@ class HttpClient:
                 if not loc:
                     raise SyncError(ErrorCode.SERVER_ERROR, "redirect without Location")
                 new = urljoin(url, loc)
-                if auth is not None and not host_allowed(new, self.allowed_auth_hosts):
+                if auth is not None and not self._allowed(new):
                     raise SyncError(ErrorCode.SERVER_ERROR, "unexpected redirect")
-                if urlsplit(new).scheme != "https":
+                if urlsplit(new).scheme != "https" and not (
+                        self.allow_insecure_localhost and urlsplit(new).scheme == "http"
+                        and urlsplit(new).hostname in _LOCAL):
                     raise SyncError(ErrorCode.SERVER_ERROR, "unexpected redirect")
                 url = new
                 continue
-            self._raise_for_status(status, rh)
+            if status not in ok_statuses:
+                self._raise_for_status(status, rh)
             return Response(status, rh, rbody, url)
         raise SyncError(ErrorCode.SERVER_ERROR, "too many redirects")
+
+    def _allowed(self, url: str) -> bool:
+        return host_allowed(url, self.allowed_auth_hosts, self.exact_auth_hosts,
+                            self.allow_insecure_localhost)
 
     @staticmethod
     def _raise_for_status(status: int, rh: dict) -> None:

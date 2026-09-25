@@ -50,11 +50,10 @@ class AccountResult:
     calendars: list[CalendarResult] = field(default_factory=list)
 
 
-def provider_hosts(provider: str) -> tuple[str, ...]:
-    """Hosts that may receive credentials. US-20 extends this."""
-    if provider == "icloud":
-        return icloud.ALLOWED
-    raise SyncError(ErrorCode.UNKNOWN, f"unsupported provider {provider!r}")
+def provider_hosts(provider: str, account: Account | None = None) -> tuple[str, ...]:
+    """Hosts that may receive credentials (US-20: from the provider registry)."""
+    from calpi.sync import providers
+    return providers.get(provider).auth_hosts(account)
 
 
 def calendar_id_for(account_id: str, href: str) -> str:
@@ -122,7 +121,10 @@ def list_calendars(client: HttpClient, account: Account, auth) -> list[RemoteCal
         if e.code is not ErrorCode.NOT_FOUND:
             raise
         log.info("calendar home not found; rediscovering")
-        d = icloud.discover(account.username, auth[1], client)
+        from calpi.sync import providers
+        d = providers.get(account.provider).discover(
+            {"username": account.username, "server_url": account.server_url,
+             "principal_url": account.options.get("principal_url_override", "")}, auth[1], client)
         return list(d.calendars)
 
 
@@ -173,9 +175,24 @@ def sync_account(account: Account, secret: Secret, store: EventStore,
         from calpi.data import timeutil
         tz = timeutil.display_tz()
     try:
-        client = client or HttpClient(allowed_auth_hosts=provider_hosts(account.provider))
+        if client is None:
+            from calpi.sync import providers
+            client = providers.make_client(account)
         auth = (account.username, secret)
         remotes = list_calendars(client, account, auth)
+    """Dispatch to the account's provider (US-20)."""
+    from calpi.sync import providers
+    try:
+        prov = providers.get(account.provider)
+    except SyncError as e:
+        return AccountResult(account.id, e.code, e.detail, [])
+    return prov.sync(account, secret, store, window, force=force, client=client, tz=tz)
+
+
+def sync_caldav_account(account: Account, secret: Secret, store: EventStore,
+                        window: tuple[datetime, datetime], *, force: bool = False,
+                        client: HttpClient | None = None, tz: ZoneInfo | None = None) -> AccountResult:
+    """Shared CalDAV loop for the icloud and caldav providers."""
     except SyncError as e:
         return AccountResult(account.id, e.code, e.detail, [])
     seen, results = set(), []
