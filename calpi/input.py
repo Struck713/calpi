@@ -211,6 +211,14 @@ class KeyRouter:
         focus = self._window.get_focus()
         if isinstance(focus, Gtk.Editable) and Gdk.keyval_name(keyval) != "Escape":
             return False
+        if Gdk.keyval_name(keyval) == "Escape":      # overlays first (US-22): dialog, blocking
+            confirm = getattr(self._window, "confirm", None)
+            if confirm is not None and confirm.is_open:
+                confirm.cancel_dialog()
+                return True
+            blocking = getattr(self._window, "blocking", None)
+            if blocking is not None and blocking.is_open:
+                return True                          # can't be cancelled with a key
         return route_key(self._nav, Gdk.keyval_name(keyval) or "", state)
 
 

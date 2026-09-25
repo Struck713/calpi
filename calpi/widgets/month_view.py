@@ -51,6 +51,10 @@ class MonthView(Gtk.Box):
         self.btn_prev.connect("clicked", lambda *_: self.go_relative(-1, reason="button"))
         self.btn_next.connect("clicked", lambda *_: self.go_relative(+1, reason="button"))
         self.btn_today.connect("clicked", lambda *_: self.go_today(reason="button"))
+        self.btn_settings = Gtk.Button(label="\u2699", css_classes=["nav-button", "header-icon"],
+                                       focus_on_click=False)       # US-22: far right
+        self.btn_settings.connect("clicked", lambda *_: self.open_settings())
+        self.header.end_slot.append(self.btn_settings)
         t = timeutil.today()
         self.year, self.month = t.year, t.month
         start = os.environ.get("CALPI_TEST_START_MONTH")     # test hook (US-10)
@@ -104,6 +108,11 @@ class MonthView(Gtk.Box):
         self.show_month(t.year, t.month)
         log.info("nav: month -> %04d-%02d (reason=%s)", t.year, t.month, reason)
 
+    def open_settings(self) -> None:
+        root = self.get_root()
+        if root is not None:
+            root.navigator.show("settings")
+
     def on_key(self, name: str, _state) -> bool:
         """Called by KeyRouter (US-11) while the calendar screen is showing."""
         if name in ("Left", "Page_Up"):
@@ -112,6 +121,8 @@ class MonthView(Gtk.Box):
             self.go_relative(+1, "key")
         elif name in ("Home", "t"):
             self.go_today("key")
+        elif name == "s":
+            self.open_settings()
         else:
             return False
         return True

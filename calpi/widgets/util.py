@@ -27,3 +27,10 @@ def add_style_provider(provider, priority) -> None:
         fn(display, provider, priority)
     else:
         Gtk.StyleContext.add_provider_for_display(display, provider, priority)
+
+
+def exempt_scrollbars(sw: Gtk.ScrolledWindow) -> Gtk.ScrolledWindow:
+    """Scrollbars are thin by design; keep them out of the touch-target checker (US-11)."""
+    sw.get_vscrollbar().add_css_class("target-exempt")
+    sw.get_hscrollbar().add_css_class("target-exempt")
+    return sw
