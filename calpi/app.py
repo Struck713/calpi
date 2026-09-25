@@ -307,7 +307,7 @@ class CalpiApp(Gtk.Application):
         from calpi.data import db
         if db.recover_if_corrupt():                               # US-12 D8, before any store opens
             self.startup_notices.append("db_reset")
-        from calpi.data.settings_store import SettingsStore
+        from calpi.data.settings_store import K_THEME, SettingsStore
         self.settings = SettingsStore()
         log.info("settings loaded from %s", self.settings.path)
         from calpi.data.credentials import CredentialStore
@@ -317,9 +317,9 @@ class CalpiApp(Gtk.Application):
         if st == "unreadable":
             self.startup_notices.append("credentials_unreadable")
         Gtk.Settings.get_default().set_property("gtk-enable-animations", False)
-        provider = Gtk.CssProvider()
-        provider.load_from_path(str(paths.app_dir() / "style.css"))
-        add_style_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self._theme_provider = Gtk.CssProvider()
+        add_style_provider(self._theme_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self._apply_theme(self.settings.get(K_THEME))       # before the first render, so no flip
         self._maybe_load_sample_data()
         from calpi.data.event_store import EventStore
         self.store = EventStore()       # the UI process's one store (US-07)
@@ -355,6 +355,26 @@ class CalpiApp(Gtk.Application):
         except Exception:
             return False
 
+    def _apply_theme(self, name) -> None:
+        """Load style.css with the theme's colour tokens. GTK 4.8 has no var(), so a change
+        rebuilds the one provider (a single parse, no widget rebuild)."""
+        from calpi.data import themes
+        from calpi.widgets.calendar_colors import load_css
+        themes.set_current(name)
+        css = themes.css_defines() + "\n" + (paths.app_dir() / "style.css").read_text()
+        load_css(self._theme_provider, css)
+        # stock widgets (buttons, switches, entries, scrollbars) follow the same mode
+        Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme",
+                                                themes.current() == "dark")
+        log.info("theme: %s", themes.current())
+
+    def _on_theme_setting(self, _k, value) -> None:
+        from calpi.data import themes
+        if themes.normalize(value) == themes.current():
+            return
+        self._apply_theme(value)
+        self.window.week_view.timeline.queue_draw()     # cairo-drawn, does not follow CSS
+
     def _apply_regional_settings(self) -> None:
         from calpi.data import formatting, timeutil
         from calpi.data.settings_store import K_TIMEZONE, K_TIME_FORMAT, K_WEEK_START
@@ -366,8 +386,9 @@ class CalpiApp(Gtk.Application):
 
     def _wire_regional_settings(self) -> None:
         from calpi.data import formatting
-        from calpi.data.settings_store import K_TIMEZONE, K_TIME_FORMAT, K_WEEK_START
+        from calpi.data.settings_store import K_THEME, K_TIMEZONE, K_TIME_FORMAT, K_WEEK_START
         self.settings.subscribe(K_TIMEZONE, lambda _k, v: self._apply_tz(v))
+        self.settings.subscribe(K_THEME, self._on_theme_setting)
         self.settings.subscribe(K_WEEK_START, lambda _k, v: (self.window.month_view.set_week_start(v),
                                                  self.window.week_view.set_week_start(v)))
         self.settings.subscribe(K_TIME_FORMAT, lambda _k, v: (

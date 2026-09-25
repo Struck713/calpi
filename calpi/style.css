@@ -1,12 +1,6 @@
 /* calpi stylesheet - the only place colours and fonts live. GTK 4.8-compatible (no var()).
+   Colour tokens (@bg, @text, ...) are defined per theme in calpi/data/themes.py and prepended at load.
    NO transition or animation properties anywhere (Pi 3B, software renderer). */
-@define-color bg        #101418;
-@define-color surface   #182028;
-@define-color text      #e8e8e8;
-@define-color text_dim  #9aa4ae;
-@define-color text_faint #5c6670;
-@define-color accent    #4f9dff;
-@define-color danger    #ff6b6b;
 
 window, .screen { background-color: @bg; color: @text; font-family: "DejaVu Sans"; }
 .placeholder-title { font-size: 96px; font-weight: 300; }
@@ -19,12 +13,12 @@ window, .screen { background-color: @bg; color: @text; font-family: "DejaVu Sans
 .weekday-label { font-size: 26px; color: @text_dim; }
 .week-row      { border-top: 1px solid alpha(@text, 0.08); }
 .day-cell      { border-left: 1px solid alpha(@text, 0.08); padding: 4px 8px; }
-.day-cell.weekend { background-color: shade(@bg, 1.15); }
+.day-cell.weekend { background-color: @weekend; }
 /* DAY_NUMBER_HEIGHT (week_row.py) = .day-cell padding-top + .day-number margin-top + min-height */
 .day-number    { font-size: 30px; min-height: 44px; min-width: 44px; margin-top: 4px; }
 .day-cell.other-month .day-number { opacity: 0.35; }
 .day-cell.today { box-shadow: inset 0 0 0 3px @accent; }
-.day-cell.today .day-number { background-color: @accent; color: @bg; border-radius: 999px; font-weight: bold; }
+.day-cell.today .day-number { background-color: @accent; color: @on_accent; border-radius: 999px; font-weight: bold; }
 
 /* --- US-41 weather --- */
 .weather-panel  { font-size: 26px; color: @text; min-width: 0; margin-right: 8px; }
@@ -36,7 +30,7 @@ window, .screen { background-color: @bg; color: @text; font-family: "DejaVu Sans
 * { transition: none; animation: none; }
 button { min-width: 72px; min-height: 72px; }
 button:hover { background-image: none; }
-button:active { background-color: @accent; color: @bg; }
+button:active { background-color: @accent; color: @on_accent; }
 button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outline-offset: 2px; }
 .touch-target { min-width: 72px; min-height: 72px; }
 
@@ -44,22 +38,22 @@ button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outl
 .nav-button { min-width: 88px; min-height: 72px; font-size: 28px; border-radius: 16px;
               background-image: none; background-color: @surface; color: @text; border: none; box-shadow: none; }
 .nav-arrow  { font-size: 44px; padding: 0 12px; }
-.nav-button:active { background-color: @accent; color: @bg; }
+.nav-button:active { background-color: @accent; color: @on_accent; }
 .nav-button:disabled { opacity: 0.3; }
 
 /* --- US-12 safe mode --- */
-.safe-mode-badge  { color: @bg; background-color: @danger; border-radius: 999px; padding: 6px 20px; font-size: 24px; font-weight: bold; }
+.safe-mode-badge  { color: @on_accent; background-color: @danger; border-radius: 999px; padding: 6px 20px; font-size: 24px; font-weight: bold; }
 .safe-mode-notice { color: @text; background-color: @surface; border-radius: 16px; padding: 16px 32px; margin: 24px; font-size: 26px; }
 
 /* --- US-21 on-screen keyboard --- */
-.osk-dock { background-color: #0b0f13; border-top: 2px solid alpha(@text, 0.12); padding: 12px 16px 16px 16px; }
+.osk-dock { background-color: @osk_dock; border-top: 2px solid alpha(@text, 0.12); padding: 12px 16px 16px 16px; }
 .osk-key  { min-height: 80px; min-width: 110px; margin: 4px 5px; border-radius: 12px; font-size: 34px;
-            background: #26303a; background-image: none; color: @text; border: none; box-shadow: none; padding: 0; }
-.osk-key:active   { background: @accent; color: @bg; }
-.osk-special      { background: #1b232b; font-size: 26px; }
-.osk-shift.on     { background: #3a4a5a; }
-.osk-shift.lock   { background: @accent; color: @bg; }
-.osk-done         { background: @accent; color: @bg; font-weight: bold; }
+            background: @key; background-image: none; color: @text; border: none; box-shadow: none; padding: 0; }
+.osk-key:active   { background: @accent; color: @on_accent; }
+.osk-special      { background: @key_special; font-size: 26px; }
+.osk-shift.on     { background: @key_on; }
+.osk-shift.lock   { background: @accent; color: @on_accent; }
+.osk-done         { background: @accent; color: @on_accent; font-weight: bold; }
 .osk-entry        { min-height: 72px; font-size: 32px; }
 .mono-entry       { font-family: monospace; }
 .color-swatch     { min-width: 72px; min-height: 72px; padding: 0; }
@@ -84,7 +78,7 @@ button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outl
 .settings-title  { font-size: 48px; font-weight: 300; }
 .back-button     { min-width: 88px; min-height: 72px; font-size: 28px; padding: 0 24px; }
 .header-icon     { min-width: 72px; min-height: 72px; font-size: 36px; }
-.settings .sidebar { min-width: 380px; background-color: #0d1216; padding: 16px; }
+.settings .sidebar { min-width: 380px; background-color: @bg_deep; padding: 16px; }
 .sidebar-item    { min-height: 88px; font-size: 30px; border-radius: 14px; margin: 4px 0; padding: 0 24px;
                    background-image: none; background-color: transparent; }
 .sidebar-item:checked { background-color: @surface; color: @text; }
@@ -101,9 +95,9 @@ button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outl
 switch           { min-width: 110px; min-height: 56px; }
 switch slider    { min-width: 52px; min-height: 52px; }
 .choice-button   { min-width: 110px; min-height: 72px; font-size: 24px; border-radius: 14px; }
-.choice-button:checked { background-image: none; background-color: @accent; color: @bg; }
+.choice-button:checked { background-image: none; background-color: @accent; color: @on_accent; }
 .preset-button   { min-width: 110px; min-height: 72px; font-size: 24px; border-radius: 14px; }
-.preset-button.selected { background-image: none; background-color: @accent; color: @bg; }
+.preset-button.selected { background-image: none; background-color: @accent; color: @on_accent; }
 .dim-layer       { background-color: black; }
 .stepper-button  { min-width: 88px; min-height: 72px; font-size: 36px; border-radius: 14px; }
 .stepper-value   { font-size: 28px; min-width: 140px; }
@@ -119,7 +113,7 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .modal-title     { font-size: 40px; }
 .modal-body      { font-size: 26px; color: @text_dim; }
 .modal-button    { min-width: 200px; min-height: 88px; font-size: 28px; border-radius: 16px; }
-.toast           { background-color: #2b3642; border-radius: 999px; padding: 18px 36px; font-size: 26px; }
+.toast           { background-color: @toast; border-radius: 999px; padding: 18px 36px; font-size: 26px; }
 
 /* --- US-09 day detail --- */
 .day-title    { font-size: 48px; font-weight: 300; }
@@ -143,12 +137,12 @@ switch slider    { min-width: 52px; min-height: 52px; }
 
 /* --- US-39 week view / view switcher --- */
 .view-button       { min-width: 120px; min-height: 72px; font-size: 28px; }
-.view-button.selected { background-color: @accent; color: @bg; font-weight: bold; }
+.view-button.selected { background-color: @accent; color: @on_accent; font-weight: bold; }
 .week-title        { font-size: 52px; }
 .week-dayrow       { min-height: 70px; }
 .week-day-label    { font-size: 26px; color: @text_dim; padding-top: 14px; }
 .week-day-label.today { color: @accent; font-weight: bold; box-shadow: inset 0 -4px 0 0 @accent; }
-.week-day-label.weekend { background-color: shade(@bg, 1.15); }
+.week-day-label.weekend { background-color: @weekend; }
 .week-allday       { border-bottom: 1px solid alpha(@text, 0.12); }
 .week-allday-row   { min-height: 26px; margin: 1px 0; min-width: 0; }
 .week-more         { font-size: 17px; min-height: 26px; color: @text_dim; margin: 1px 8px; }
@@ -163,7 +157,7 @@ switch slider    { min-width: 52px; min-height: 52px; }
 
 .sync-status { font-size: 20px; color: @text_faint; }
 .sync-status.offline { color: @text_dim; }
-.sync-status.stale, .sync-status.clock { color: #e0a040; }
+.sync-status.stale, .sync-status.clock { color: @warn; }
 .sync-status.error { color: @danger; }
 .refresh-button { font-size: 36px; min-width: 72px; }
 
@@ -179,7 +173,7 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .guide-heading     { font-size: 34px; font-weight: bold; margin-top: 12px; }
 .guide-body        { font-size: 26px; color: @text; }
 .guide-step-number { font-size: 26px; font-weight: bold; min-width: 44px; min-height: 44px;
-                     border-radius: 22px; background-color: @accent; color: @bg; }
+                     border-radius: 22px; background-color: @accent; color: @on_accent; }
 .guide-caption     { font-size: 24px; color: @text_dim; }
 
 /* US-40 agenda */
@@ -193,7 +187,7 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .agenda-time       { font-size: 26px; color: @text_dim; }
 .agenda-title      { font-size: 30px; }
 .agenda-sub        { font-size: 22px; color: @text_dim; }
-.agenda-now-tag    { font-size: 18px; color: @bg; background-color: @accent; border-radius: 8px; padding: 0 10px; font-weight: bold; margin-top: 4px; }
+.agenda-now-tag    { font-size: 18px; color: @on_accent; background-color: @accent; border-radius: 8px; padding: 0 10px; font-weight: bold; margin-top: 4px; }
 .agenda-more-label { font-size: 24px; color: @text_dim; padding: 24px 48px; }
 
 /* US-32 setup wizard */
@@ -203,23 +197,23 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .wizard-lead      { font-size: 30px; color: @text; }
 .wizard-note      { font-size: 24px; color: @text_dim; }
 .wizard-banner    { font-size: 28px; color: @accent; }
-.wizard-footer    { padding: 16px 48px 24px 48px; background-color: #0d1216; }
+.wizard-footer    { padding: 16px 48px 24px 48px; background-color: @bg_deep; }
 .wizard-button    { min-width: 200px; min-height: 88px; font-size: 30px; border-radius: 16px; }
-.wizard-button.suggested { background-image: none; background-color: @accent; color: @bg; }
+.wizard-button.suggested { background-image: none; background-color: @accent; color: @on_accent; }
 .wizard .settings-content, .wizard .settings-subpage { padding: 16px 48px; }
 
 /* US-31 status section */
 .verdict { padding: 20px 24px; margin-bottom: 32px; border-radius: 16px; background-color: @surface; border-left: 12px solid @text_faint; }
-.verdict-ok   { border-left-color: #4caf50; }
-.verdict-warn { border-left-color: #e0a040; }
+.verdict-ok   { border-left-color: @ok; }
+.verdict-warn { border-left-color: @warn; }
 .verdict-bad  { border-left-color: @danger; }
 .verdict-text { font-size: 40px; }
 .status-detail { font-size: 20px; color: @text_dim; margin-top: 6px; margin-bottom: 6px; }
-.status-warn { color: #e0a040; }
+.status-warn { color: @warn; }
 
 /* US-38 problem banner (replaces the weekday row, same slot height) */
 .problem-banner { min-height: 56px; padding: 0 12px; background-color: @surface; border-left: 8px solid @text_dim; }
-.problem-banner.warning { border-left-color: #e0a040; }
+.problem-banner.warning { border-left-color: @warn; }
 .problem-banner.error { border-left-color: @danger; }
 .problem-banner.info { border-left-color: @accent; }
 .problem-text-button { background-image: none; background-color: transparent; border: none; box-shadow: none; padding: 0 8px; min-height: 56px; }

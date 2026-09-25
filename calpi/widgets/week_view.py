@@ -17,7 +17,7 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import PangoCairo  # noqa: E402
 
 from calpi import perf  # noqa: E402
-from calpi.data import formatting, layout as month_layout, monthmath, timeutil, week_layout  # noqa: E402
+from calpi.data import formatting, layout as month_layout, monthmath, themes, timeutil, week_layout  # noqa: E402
 from calpi.widgets.calendar_colors import CalendarColors  # noqa: E402
 from calpi.widgets.header import Header  # noqa: E402
 from calpi.widgets.swipe import attach_horizontal_swipe  # noqa: E402
@@ -30,11 +30,6 @@ GUTTER = 80
 START_H, END_H = 7, 22
 ALLDAY_ROW_H = 28
 MIN_YEAR, MAX_YEAR = 1970, 2100
-# Mirrors of the palette in style.css (cairo cannot read CSS colours cheaply).
-BG = (0x10 / 255, 0x14 / 255, 0x18 / 255)
-TEXT = (0xe8 / 255, 0xe8 / 255, 0xe8 / 255)
-DIM = (0x9a / 255, 0xa4 / 255, 0xae / 255)
-ACCENT = (0x4f / 255, 0x9d / 255, 0xff / 255)
 FONT = "DejaVu Sans"
 
 
@@ -383,6 +378,8 @@ class WeekView(Gtk.Box):
         return "#%02x%02x%02x" % tuple(round(v * 255) for v in rgb)
 
     def _draw(self, _area, cr, width: int, height: int) -> None:
+        BG, TEXT, DIM, ACCENT = (themes.rgb(t) for t in ("bg", "text", "text_dim", "accent"))
+        weekend = themes.rgb("weekend")     # cairo cannot read CSS colours cheaply
         cr.set_source_rgb(*BG)
         cr.paint()
         lay = self._layout
@@ -396,7 +393,7 @@ class WeekView(Gtk.Box):
             if d == today:
                 cr.set_source_rgba(*ACCENT, 0.07)
             elif d.weekday() >= 5:
-                cr.set_source_rgba(1, 1, 1, 0.025)
+                cr.set_source_rgb(*weekend)
             else:
                 continue
             cr.rectangle(g.x_of_day(i), 0, g.day_w, height)

@@ -91,6 +91,8 @@ def _valid_tz(v) -> bool:
 register(Key(K_TIMEZONE, (str, type(None)), None, _valid_tz))
 register(Key(K_WEEK_START, int, 0, lambda v: v in (0, 5, 6)))
 register(Key(K_TIME_FORMAT, str, "24h", lambda v: v in ("24h", "12h")))
+K_THEME = "theme"                                       # light / dark colour theme
+register(Key(K_THEME, str, "dark", lambda v: v in ("dark", "light")))
 K_DEFAULT_VIEW = "default_view"                         # US-39 (US-40 appends "agenda" to VIEWS)
 VIEWS = ("month", "week", "agenda")
 register(Key(K_DEFAULT_VIEW, str, "month", lambda v: v in VIEWS))
