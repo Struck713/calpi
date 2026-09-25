@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from gi.repository import Gdk, GLib, Gtk
 
-from calpi import __version__, crashguard, paths, watchdog
+from calpi import __version__, crashguard, paths, perf, watchdog
 from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets_enabled,
                          install_target_checker)
 from calpi.inactivity import DEFAULT_RETURN_SECONDS, InactivityMonitor
@@ -63,6 +63,7 @@ class Navigator:
         cur = self.current
         if cur == name and not params:
             return
+        t0 = time.perf_counter()
         if cur is not None:
             old = self._screens[cur]
             if hasattr(old, "on_hide"):
@@ -75,6 +76,8 @@ class Navigator:
         if hasattr(new, "on_show"):
             new.on_show(**params)
         log.info("screen=%s", name)
+        if cur != name:
+            perf.until_paint("screen_" + name, self._stack, t0)     # US-36: input -> painted
         for cb in list(self.changed_callbacks):
             try:
                 cb(name)
@@ -325,6 +328,8 @@ class CalpiApp(Gtk.Application):
         self.window = MainWindow(self, self.args.windowed)
         self._wire_regional_settings()
         self.window.present()
+        perf.mark_first_paint("start_to_first_paint", "boot_to_first_paint", self.window,
+                              also_start="start_to_events_paint" if self._store_has_events() else None)
         self._setup_recovery()
         self._setup_sync()
         self._setup_weather()
@@ -333,6 +338,15 @@ class CalpiApp(Gtk.Application):
                  os.environ.get("GSK_RENDERER"))
         if self.args.exit_after:
             GLib.timeout_add_seconds(self.args.exit_after, self._exit_for_test)
+        if os.environ.get("CALPI_BENCH") == "1":          # US-36 D5: dev-only, never in normal operation
+            from calpi.devtools import bench
+            bench.start(self, os.environ.get("CALPI_BENCH_SCENARIOS", bench.DEFAULT_SCENARIOS))
+
+    def _store_has_events(self) -> bool:
+        try:
+            return self.store.count_events() > 0
+        except Exception:
+            return False
 
     def _apply_regional_settings(self) -> None:
         from calpi.data import formatting, timeutil
@@ -612,6 +626,8 @@ def main(argv=None) -> int:
     install_log_redaction()
     args = parse_args(argv)
     paths.set_state_dir_override(args.state_dir)
+    if os.environ.get("CALPI_BENCH") == "1" and os.environ.get("CALPI_BENCH_STATE"):
+        paths.set_state_dir_override(os.environ["CALPI_BENCH_STATE"])     # US-36: stress data set
     _install_excepthooks()
     app = CalpiApp(args)
 

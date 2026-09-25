@@ -1,10 +1,11 @@
 """Deterministic sample calendars/events for development, plus a CLI loader. No gi imports.
 
-    python3 -m calpi.data.sample_data --load [--clear] [--state-dir DIR] [--today YYYY-MM-DD]
+    python3 -m calpi.data.sample_data --load [--clear] [--state-dir DIR] [--today YYYY-MM-DD] [--scale N]
 """
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
@@ -101,13 +102,29 @@ def sample_events(today: date, tz: ZoneInfo) -> list[Event]:
     return out
 
 
-def load(store: EventStore, today: date, tz: ZoneInfo, clear: bool = False) -> int:
+def scaled_events(today: date, tz: ZoneInfo, scale: int = 1) -> list[Event]:
+    """The sample events repeated `scale` times (US-36 stress data). Copy k is shifted by 3k days and
+    20k minutes, with a suffixed uid and title, so days get busier but stay plausible."""
+    base = sample_events(today, tz)
+    out = list(base)
+    for k in range(1, max(1, scale)):
+        dd, dm = timedelta(days=3 * k), timedelta(minutes=20 * k)
+        for e in base:
+            shift = dd if e.all_day else dd + dm
+            out.append(dataclasses.replace(
+                e, uid=f"{e.uid[:-len('@calpi')]}-x{k}@calpi", summary=f"{e.summary} #{k}",
+                start=e.start + shift, end=e.end + shift,
+                recurrence_id=(e.recurrence_id + f"+{k}") if e.recurrence_id else ""))
+    return out
+
+
+def load(store: EventStore, today: date, tz: ZoneInfo, clear: bool = False, scale: int = 1) -> int:
     if clear:
         store.delete_sample_data()
     for c in sample_calendars():
         store.upsert_calendar(c)
     by_cal: dict[str, list[Event]] = defaultdict(list)
-    for e in sample_events(today, tz):
+    for e in scaled_events(today, tz, scale):
         by_cal[e.calendar_id].append(e)
     return sum(store.replace_calendar_events(cid, evs) for cid, evs in by_cal.items())
 
@@ -118,13 +135,15 @@ def main(argv=None) -> int:
     p.add_argument("--clear", action="store_true")
     p.add_argument("--state-dir")
     p.add_argument("--today", help="YYYY-MM-DD (default: real today)")
+    p.add_argument("--scale", type=int, default=1, metavar="N",
+                   help="generate about N times as many events (stress data, US-36)")
     a = p.parse_args(argv)
     from calpi import paths
     paths.set_state_dir_override(a.state_dir)
     tz = timeutil.display_tz()
     today = date.fromisoformat(a.today) if a.today else timeutil.today()
     store = EventStore()
-    n = load(store, today, tz, clear=a.clear)
+    n = load(store, today, tz, clear=a.clear, scale=a.scale)
     print(f"loaded {n} sample events")
     return 0
 

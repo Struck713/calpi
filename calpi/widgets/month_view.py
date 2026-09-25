@@ -8,11 +8,13 @@ from typing import Callable
 
 from gi.repository import Gtk
 
+from calpi import perf
 from calpi.data import formatting, layout, monthmath, timeutil
 from calpi.weather.client import daily_text
 from calpi.widgets.calendar_colors import CalendarColors
 from calpi.widgets.header import Header
 from calpi.widgets.problem_banner import ProblemBanner
+from calpi.widgets.swipe import attach_horizontal_swipe
 from calpi.widgets.util import is_refresh_key, set_text_if_changed, trigger_refresh
 from calpi.widgets.view_switcher import ViewSwitcher
 from calpi.widgets.week_row import CAPACITY, WeekRow
@@ -39,8 +41,9 @@ class MonthView(Gtk.Box):
                                for _ in range(7)]
         for i, lbl in enumerate(self.weekday_labels):
             self.weekday_row.attach(lbl, i, 0, 1, 1)
-        weeks = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, homogeneous=True, vexpand=True,
-                        css_classes=["weeks"])
+        weeks = self.weeks_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, homogeneous=True,
+                                         vexpand=True, css_classes=["weeks"])
+        attach_horizontal_swipe(weeks, lambda d: self.go_relative(d, reason="swipe"))   # US-35
         self.week_rows = [WeekRow() for _ in range(6)]
         for w in self.week_rows:
             weeks.append(w)
@@ -191,6 +194,10 @@ class MonthView(Gtk.Box):
 
     def reload(self, force: bool = False) -> None:
         """Redraw events. Skipped when nothing relevant changed (unless force)."""
+        with perf.profiled("reload"):            # CALPI_PROFILE=reload (US-36)
+            self._reload(force)
+
+    def _reload(self, force: bool) -> None:
         if self.store is None:
             return
         t0 = time.perf_counter()
@@ -205,22 +212,4 @@ class MonthView(Gtk.Box):
         for row in self.week_rows:
             row.render(layout.layout_week(row.dates, events, tz, CAPACITY), self.colors, self.month)
         self._last_key = key
-        _log_until_paint("month_render", t0, self)
-
-
-def _log_until_paint(name: str, t0: float, widget: Gtk.Widget) -> None:
-    """Logs 'perf: <name> NN ms' when the next frame is painted (US-36 may move this to perf.py)."""
-    level = logging.INFO if os.environ.get("CALPI_PERF") == "1" else logging.DEBUG
-    if not log.isEnabledFor(level):
-        return
-    clock = widget.get_frame_clock()
-    if clock is None:
-        log.log(level, "perf: %s %.1f ms (unpainted)", name, (time.perf_counter() - t0) * 1000)
-        return
-    handler = []
-
-    def on_paint(c):
-        c.disconnect(handler[0])
-        log.log(level, "perf: %s %.1f ms", name, (time.perf_counter() - t0) * 1000)
-
-    handler.append(clock.connect("after-paint", on_paint))
+        perf.until_paint("month_render", self, t0)

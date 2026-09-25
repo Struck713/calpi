@@ -16,9 +16,11 @@ from gi.repository import Gtk, Pango
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import PangoCairo  # noqa: E402
 
+from calpi import perf  # noqa: E402
 from calpi.data import formatting, layout as month_layout, monthmath, timeutil, week_layout  # noqa: E402
 from calpi.widgets.calendar_colors import CalendarColors  # noqa: E402
 from calpi.widgets.header import Header  # noqa: E402
+from calpi.widgets.swipe import attach_horizontal_swipe  # noqa: E402
 from calpi.widgets.util import set_class, set_text_if_changed  # noqa: E402
 from calpi.widgets.view_switcher import ViewSwitcher  # noqa: E402
 
@@ -118,6 +120,7 @@ class WeekView(Gtk.Box):
 
         for w in (self.header, self.day_row, self.strip, self.timeline):
             self.append(w)
+        attach_horizontal_swipe(self, lambda d: self.go_relative(d, "swipe"))   # US-35
         self._apply_header()
 
     # ---------------------------------------------------------------- helpers
@@ -275,8 +278,7 @@ class WeekView(Gtk.Box):
         self._events = self.store.events_for_days(self.first_day, self.first_day + timedelta(days=7), tz)
         self._events_key = key
         self._rebuild(force=True)
-        from calpi.widgets.month_view import _log_until_paint
-        _log_until_paint("week_render", t0, self)
+        perf.until_paint("week_render", self, t0)
 
     def _on_resize(self, _area, _w, _h) -> None:
         self._rebuild()

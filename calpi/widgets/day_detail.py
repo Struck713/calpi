@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 from gi.repository import Gtk, Pango
 
+from calpi import perf
 from calpi.data import formatting, timeutil
 from calpi.widgets.util import (exempt_scrollbars, is_refresh_key, set_text_if_changed, set_visible_if_changed,
                                trigger_refresh)
@@ -78,8 +79,7 @@ class DayDetail(Gtk.Box):
         self._build(force=True)
         self.scroller.get_vadjustment().set_value(0)
         if self._open_t0 is not None:
-            from calpi.widgets.month_view import _log_until_paint
-            _log_until_paint("day_open", self._open_t0, self)
+            perf.until_paint("day_open", self, self._open_t0)
             self._open_t0 = None
 
     def on_hide(self):

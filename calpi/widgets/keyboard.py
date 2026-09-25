@@ -10,6 +10,7 @@ import weakref
 
 from gi.repository import GLib, Gtk
 
+from calpi import perf
 from calpi.data.keyboard_layouts import LAYOUTS, Key, first_layer, layout_id
 
 log = logging.getLogger("calpi.keyboard")
@@ -180,7 +181,8 @@ class KeyboardDock(Gtk.Box):
                 log.exception("on_keyboard_visible failed")
 
     def _show_for(self, ed, purpose, done_label, on_done) -> None:
-        t0 = time.monotonic()
+        t0 = time.perf_counter()
+        first = self.osk is None
         if self.osk is None:
             self.osk = OnScreenKeyboard(self._apply)
             self.append(self.osk)
@@ -199,7 +201,7 @@ class KeyboardDock(Gtk.Box):
         self.set_visible(True)
         if not was:
             self._notify(True)
-        log.debug("perf: osk_show %.1f ms", (time.monotonic() - t0) * 1000)
+        perf.until_paint("osk_show_first" if first else "osk_show", self, t0)      # US-36
 
     def _maybe_hide(self):
         root = self.get_root()
@@ -209,6 +211,11 @@ class KeyboardDock(Gtk.Box):
         return GLib.SOURCE_REMOVE
 
     def _apply(self, key: Key) -> None:
+        t0 = time.perf_counter()
+        self._apply_key(key)
+        perf.until_paint("osk_key", self, t0)
+
+    def _apply_key(self, key: Key) -> None:
         ed = self._target()
         if ed is None:
             self.hide()

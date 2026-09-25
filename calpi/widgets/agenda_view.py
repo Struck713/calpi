@@ -12,6 +12,7 @@ from datetime import date, timedelta
 
 from gi.repository import Gtk, Pango
 
+from calpi import perf
 from calpi.data import agenda, formatting, timeutil
 from calpi.widgets.calendar_colors import CalendarColors
 from calpi.widgets.header import Header
@@ -143,8 +144,7 @@ class AgendaView(Gtk.Box):
             return
         self._shown = shown
         self._rebuild(ag, today)
-        from calpi.widgets.month_view import _log_until_paint
-        _log_until_paint("agenda_render", t0, self)
+        perf.until_paint("agenda_render", self, t0)
 
     # ---------------------------------------------------------------- rows
     def _rebuild(self, ag: agenda.Agenda, today: date) -> None:

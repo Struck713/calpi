@@ -8,6 +8,7 @@
 #   health                  throttling, temperature, memory, app RSS/CPU, disk
 #   deps [--update]         install deps/apt-runtime.txt on the Pi (never upgrades)
 #   rollback                restore the previous deploy
+#   perf [--stress] [--during-sync] [--week]   run the US-36 benchmark driver on the Pi, print the table
 #   ssh [cmd...]            ssh to the Pi
 # Env: CALPI_HOST (default "calpi"; fallback "calpi.local"), CALPI_USER, CALPI_WAYLAND_DISPLAY.
 set -euo pipefail
@@ -137,6 +138,46 @@ cmd_rollback() {
   echo "ROLLBACK OK ($(remote "cat $APP_DIR/calpi/BUILD 2>/dev/null" || echo unknown))"
 }
 
+# US-36: run the scripted benchmark (calpi/devtools/bench.py) under the real service, collect the JSON.
+# Adds a temporary systemd drop-in; the trap removes it (and the done-marker) even on failure.
+cmd_perf() {
+  local stress=0 scen="${CALPI_BENCH_SCENARIOS:-startup,month_nav,day_open,settings_open,osk,idle}"
+  local dropin=/etc/systemd/system/$SERVICE.service.d/bench.conf out="$ROOT/scratch-bench.json"
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --stress) stress=1 ;;
+      --during-sync) scen="$scen,during_sync" ;;
+      --week) scen="$scen,week_nav" ;;
+      *) die "perf: unknown option $1" ;;
+    esac
+    shift
+  done
+  check_conn
+  local env_lines="Environment=CALPI_BENCH=1\\nEnvironment=CALPI_BENCH_SCENARIOS=$scen\\nEnvironment=CALPI_PERF=1\\n"
+  if (( stress )); then
+    env_lines+="Environment=CALPI_BENCH_STATE=/tmp/calpi-perf\\n"
+    echo "==> stress data set goes to /tmp/calpi-perf (the real state directory is not touched)"
+    remote "sudo rm -rf /tmp/calpi-perf && cd $APP_DIR && sudo -u kiosk /usr/bin/python3 -m calpi.data.sample_data --load --clear --scale 5 --state-dir /tmp/calpi-perf"
+  fi
+  echo "==> health before"; cmd_health | head -3
+  cleanup() {
+    remote "sudo rm -f $dropin && sudo systemctl daemon-reload && sudo rm -f /run/calpi/bench.done /run/calpi/bench.json; \
+            (( $stress )) && sudo rm -rf /tmp/calpi-perf; sudo systemctl restart $SERVICE" >/dev/null 2>&1 || true
+    echo "==> bench drop-in removed, service restarted"
+  }
+  trap cleanup EXIT
+  remote "sudo rm -f /run/calpi/bench.done; sudo mkdir -p $(dirname $dropin) && printf '[Service]\\n$env_lines' | sudo tee $dropin >/dev/null && sudo systemctl daemon-reload"
+  local cursor
+  cursor=$(remote "journalctl -u $SERVICE -n 0 --show-cursor --no-pager 2>/dev/null | sed -n 's/^-- cursor: //p'") || cursor=""
+  echo "==> restarting with the bench drop-in (scenarios: $scen); the idle scenario takes ~5 minutes"
+  remote "sudo systemctl restart $SERVICE"
+  remote "a=''; [ -n '$cursor' ] && a=--after-cursor='$cursor'; timeout 1200 journalctl -u $SERVICE \$a -f -o cat --no-pager | grep -m1 CALPI_BENCH_RESULT" \
+    | sed 's/^.*CALPI_BENCH_RESULT //' > "$out" || true
+  [[ -s "$out" ]] || die "no CALPI_BENCH_RESULT within the timeout (see: scripts/pi logs -n 200)"
+  /usr/bin/python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from calpi.devtools import report; sys.exit(report.main([sys.argv[2]]))' "$ROOT" "$out" || echo "(some targets missed, see above)"
+  echo "raw report: $out (scratch file: delete it when done)"
+}
+
 cmd="${1:-}"; [[ $# -gt 0 ]] && shift
 case "$cmd" in
   deploy)     cmd_deploy "$@" ;;
@@ -147,6 +188,7 @@ case "$cmd" in
   health)     cmd_health ;;
   deps)       cmd_deps "$@" ;;
   rollback)   cmd_rollback ;;
+  perf)       cmd_perf "$@" ;;
   ssh)        exec ssh "$HOST" "$@" ;;
-  *)          sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; [[ -z "$cmd" || $cmd == -h || $cmd == --help ]] || exit 2 ;;
+  *)          sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; [[ -z "$cmd" || $cmd == -h || $cmd == --help ]] || exit 2 ;;
 esac
