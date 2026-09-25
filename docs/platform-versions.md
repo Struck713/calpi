@@ -13,6 +13,7 @@ Recorded: TBD by TBD.
 | Kernel | TBD |
 | systemd | TBD |
 | Python (/usr/bin/python3) | TBD |
+| SQLite (Python sqlite3 module) | devcontainer 3.46.1; Pi: TBD (`/usr/bin/python3 -c "import sqlite3; print(sqlite3.sqlite_version)"`) |
 | GTK 4 | TBD (`dpkg -s libgtk-4-1 \| grep Version`; do not import Gtk over SSH, it hangs) |
 | cage | TBD (`dpkg -s cage \| grep Version`) |
 | NetworkManager | TBD |
