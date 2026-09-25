@@ -93,6 +93,9 @@ switch           { min-width: 110px; min-height: 56px; }
 switch slider    { min-width: 52px; min-height: 52px; }
 .choice-button   { min-width: 110px; min-height: 72px; font-size: 24px; border-radius: 14px; }
 .choice-button:checked { background-image: none; background-color: @accent; color: @bg; }
+.preset-button   { min-width: 110px; min-height: 72px; font-size: 24px; border-radius: 14px; }
+.preset-button.selected { background-image: none; background-color: @accent; color: @bg; }
+.dim-layer       { background-color: black; }
 .stepper-button  { min-width: 88px; min-height: 72px; font-size: 36px; border-radius: 14px; }
 .stepper-value   { font-size: 28px; min-width: 140px; }
 .subpage-back    { min-width: 88px; min-height: 72px; font-size: 26px; margin: 16px 48px 0 48px; padding: 0 24px; }

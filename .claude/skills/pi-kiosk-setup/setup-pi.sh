@@ -111,6 +111,31 @@ if [[ "$LEAN" == 1 ]]; then
   done
 fi
 
+echo "==> display brightness access (US-29)"
+apt-get install -y --no-install-recommends ddcutil || echo "ddcutil unavailable: DDC backend disabled"
+echo i2c-dev > /etc/modules-load.d/calpi-i2c.conf; modprobe i2c-dev || true
+getent group i2c >/dev/null || groupadd --system i2c
+usermod -aG i2c,video kiosk
+cat > /etc/udev/rules.d/60-calpi-backlight.rules <<'EOF'
+SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chgrp video /sys%p/brightness /sys%p/bl_power", RUN+="/bin/chmod g+w /sys%p/brightness /sys%p/bl_power"
+SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
+EOF
+udevadm control --reload-rules && udevadm trigger || true
+# group changes reach the kiosk process only after a service restart
+
+echo "==> polkit: kiosk may manage NetworkManager (US-23)"
+install -d -m 0755 /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/50-calpi-networkmanager.rules <<'EOF'
+// calpi: allow the kiosk user to manage networking without prompts (US-23)
+polkit.addRule(function(action, subject) {
+    if (subject.user === "kiosk" && action.id.indexOf("org.freedesktop.NetworkManager.") === 0) {
+        return polkit.Result.YES;
+    }
+});
+EOF
+chmod 0644 /etc/polkit-1/rules.d/50-calpi-networkmanager.rules
+systemctl restart polkit || true
+
 echo "==> boot target"
 systemctl daemon-reload
 systemctl disable getty@tty1.service || true

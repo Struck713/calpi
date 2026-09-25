@@ -13,6 +13,7 @@ log = logging.getLogger("calpi.settings.ui")
 
 SECTION_MODULES = [
     "about",
+    "display",     # US-29 (US-30 adds its group to this section)
     "accounts",
     # US-23 network, US-25 accounts, US-26 calendars, US-27 sync, US-29 display,
     # US-28 preferences, US-31 status: append here when implemented.

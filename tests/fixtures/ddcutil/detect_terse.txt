@@ -1,0 +1,17 @@
+Display 1
+   I2C bus:  /dev/i2c-2
+   EDID synopsis:
+      Mfg id:               DEL
+      Model:                DELL U2415
+      Product code:         16542
+   VCP version:         2.1
+
+Invalid display
+   I2C bus:  /dev/i2c-20
+   EDID synopsis:
+      Mfg id:               XXX
+   DDC communication failed
+
+Display 2
+   I2C bus:  /dev/i2c-4
+   Monitor:             ACR:Acer XB271HU:12345

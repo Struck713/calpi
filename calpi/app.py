@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from gi.repository import Gdk, GLib, Gtk
 
@@ -93,6 +94,12 @@ class MainWindow(Gtk.ApplicationWindow):
         self.confirm = ConfirmDialog(self)
         self.blocking = BlockingOverlay(self)
         self.toast_widget = Toast(self)
+        # US-29: software dim layer above everything (US-30's wake-catcher goes above it)
+        self.dim_layer = Gtk.Box(css_classes=["dim-layer"], can_target=False, visible=False,
+                                 hexpand=True, vexpand=True)
+        self.overlay.add_overlay(self.dim_layer)
+        self._dim_alpha = 0.0
+        app.brightness = self._make_brightness(app)
         if check_targets_enabled():
             install_target_checker(self.navigator)
         self.month_view = MonthView(week_start=app.week_start)      # US-28
@@ -123,6 +130,28 @@ class MainWindow(Gtk.ApplicationWindow):
         """Called after a sync/settings change (US-16, US-26, US-28): refresh what is showing."""
         self.month_view.reload()
         self.day_detail.reload()
+
+    def _apply_dim(self, alpha: float) -> None:
+        """Main thread. Only touches the layer when the value changes; hidden entirely at 0."""
+        if abs(alpha - self._dim_alpha) < 0.001:
+            return
+        self._dim_alpha = alpha
+        if alpha <= 0.001:
+            self.dim_layer.set_visible(False)
+        else:
+            self.dim_layer.set_opacity(alpha)
+            self.dim_layer.set_visible(True)
+
+    def _make_brightness(self, app):
+        from calpi.data.settings_store import K_BRIGHTNESS
+        from calpi.system.brightness import BrightnessController
+        from calpi.tasks import call_on_main, run_in_thread
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="brightness")
+        return BrightnessController(
+            app.settings, K_BRIGHTNESS, self._apply_dim, call_on_main=call_on_main,
+            run_async=lambda fn: pool.submit(fn),
+            probe_async=lambda work, done, err: run_in_thread(
+                work, on_done=done, on_error=err, name="brightness-probe"))
 
     def _on_day_changed(self, old, new):
         mv = self.month_view

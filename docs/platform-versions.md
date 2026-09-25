@@ -64,3 +64,10 @@ ssh calpi '
    scp .claude/skills/pi-kiosk-setup/{setup-pi.sh,calpi-kiosk.service,pam-calpi-kiosk} calpi:/tmp/
    ssh calpi 'sudo WIFI_COUNTRY=<CC> bash /tmp/setup-pi.sh'
    ```
+
+## Display capabilities (US-29)
+
+Not yet recorded: no Pi or monitor was reachable when US-29 was built. On the Pi, run:
+`ls -l /sys/class/backlight/ /dev/i2c-*; id kiosk; sudo -u kiosk ddcutil detect --terse; sudo -u kiosk ddcutil --terse getvcp 10`
+and fill in: monitor model, backlight device (usually none for HDMI), DDC/CI supported (yes/no), backend chosen
+by the probe (`journalctl -u calpi-kiosk | grep "brightness: backend"`).

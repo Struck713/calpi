@@ -8,3 +8,4 @@ python3-icalendar
 python3-recurring-ical-events
 python3-x-wr-timezone
 python3-dateutil
+ddcutil

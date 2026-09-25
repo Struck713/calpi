@@ -54,6 +54,8 @@ def register(key: Key) -> Key:
 register(Key(K_SCHEMA_VERSION, int, 1))
 register(Key(K_SETUP_COMPLETED, bool, False))
 register(Key(K_INACTIVITY_RETURN_SECONDS, int, 120, lambda v: 30 <= v <= 3600))
+K_BRIGHTNESS = "brightness"                             # US-29
+register(Key(K_BRIGHTNESS, int, 100, lambda v: 10 <= v <= 100))
 K_ACCOUNTS = "accounts"
 _ACCOUNT_KEYS = {"id", "provider", "username", "display_name", "server_url",
                  "principal_url", "calendar_home_url", "created_at"}
