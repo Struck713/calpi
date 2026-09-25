@@ -41,6 +41,10 @@ button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outl
 .nav-button:active { background-color: @accent; color: @bg; }
 .nav-button:disabled { opacity: 0.3; }
 
+/* --- US-12 safe mode --- */
+.safe-mode-badge  { color: @bg; background-color: @danger; border-radius: 999px; padding: 6px 20px; font-size: 24px; font-weight: bold; }
+.safe-mode-notice { color: @text; background-color: @surface; border-radius: 16px; padding: 16px 32px; margin: 24px; font-size: 26px; }
+
 /* --- US-21 on-screen keyboard --- */
 .osk-dock { background-color: #0b0f13; border-top: 2px solid alpha(@text, 0.12); padding: 12px 16px 16px 16px; }
 .osk-key  { min-height: 80px; min-width: 110px; margin: 4px 5px; border-radius: 12px; font-size: 34px;
@@ -51,3 +55,17 @@ button:focus-visible, .day-cell:focus-visible { outline: 3px solid @accent; outl
 .osk-shift.lock   { background: @accent; color: @bg; }
 .osk-done         { background: @accent; color: @bg; font-weight: bold; }
 .osk-entry        { min-height: 72px; font-size: 32px; }
+
+/* --- US-07 events in the grid. LINE_HEIGHT (week_row.py) = min-height + 2 x 1px margin = 25 --- */
+.week-content  { padding: 0 4px; }
+.slot-spacer   { min-height: 23px; margin: 1px 0; min-width: 0; }
+.bar  { min-height: 23px; margin: 1px 3px; padding: 0 8px; border-radius: 6px; font-size: 18px; }
+.bar.cont-before { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 0; }
+.bar.cont-after  { border-top-right-radius: 0; border-bottom-right-radius: 0; margin-right: 0; }
+.bar.tentative   { opacity: 0.6; }
+.line { min-height: 23px; margin: 1px 6px; font-size: 18px; }
+.line .dot  { min-width: 10px; min-height: 10px; border-radius: 5px; margin-right: 6px; }
+.line .time { color: @text_dim; margin-right: 6px; }
+.line.tentative .summary { font-style: italic; color: @text_dim; }
+.more { font-size: 17px; min-height: 23px; color: @text_dim; margin: 1px 8px; }
+.bar.other-month, .line.other-month, .more.other-month { opacity: 0.35; }

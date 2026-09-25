@@ -7,7 +7,7 @@ import signal
 import sys
 import threading
 
-from gi.repository import GLib, Gtk
+from gi.repository import Gdk, GLib, Gtk
 
 from calpi import __version__, crashguard, paths, watchdog
 from calpi.input import (CursorManager, KeyRouter, WindowEventHub, check_targets_enabled,
@@ -89,6 +89,8 @@ class MainWindow(Gtk.ApplicationWindow):
         if check_targets_enabled():
             install_target_checker(self.navigator)
         self.month_view = MonthView(week_start=0)
+        self.month_view.attach_store(app.store)         # US-07
+        app.calendar_colors = self.month_view.colors
         self.navigator.add("calendar", self.month_view)
         app.clock.subscribe_day_changed(self._on_day_changed)
         self.navigator.show("calendar")
@@ -158,6 +160,8 @@ class CalpiApp(Gtk.Application):
         self.window: MainWindow | None = None
         self.settings = None            # SettingsStore, created in _on_activate
         self.clock = None               # ClockService, created in _on_activate
+        self.store = None               # EventStore, created in _on_activate (US-07)
+        self.calendar_colors = None     # CalendarColors, shared with later views (US-07)
         self.credentials = None         # CredentialStore, created in _on_activate (US-13)
         self.safe_mode = False          # US-12: crash loop detected; extras/auto-sync must check it
         if not hasattr(self, "startup_notices"):
@@ -189,6 +193,8 @@ class CalpiApp(Gtk.Application):
         provider.load_from_path(str(paths.app_dir() / "style.css"))
         add_style_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self._maybe_load_sample_data()
+        from calpi.data.event_store import EventStore
+        self.store = EventStore()       # the UI process's one store (US-07)
         from calpi.clock import ClockService
         self.clock = ClockService()
         self.window = MainWindow(self, self.args.windowed)
@@ -234,7 +240,7 @@ class CalpiApp(Gtk.Application):
                 c.disconnect(hid[0])
                 _send_ready()
             hid.append(clock.connect("after-paint", _painted))
-            clock.request_phase(0x20)          # make sure a frame is painted
+            clock.request_phase(Gdk.FrameClockPhase.PAINT)          # make sure a frame is painted
         if self.window.get_mapped():
             _on_map(self.window)
         else:
@@ -255,13 +261,13 @@ class CalpiApp(Gtk.Application):
     def _maybe_load_sample_data(self):
         if not (self.args.sample_data or os.environ.get("CALPI_SAMPLE_DATA") == "1"):
             return
-        from calpi.data import sample_data
+        from calpi.data import sample_data, timeutil
         from calpi.data.event_store import EventStore
         store = EventStore()
         try:
             if not store.list_calendars():       # only into an empty store
-                tz = sample_data._system_tz()    # TODO(US-06): use timeutil.display_tz()
-                n = sample_data.load(store, dt.datetime.now(tz).date(), tz)
+                tz = timeutil.display_tz()
+                n = sample_data.load(store, timeutil.today(), tz)
                 log.info("loaded %d sample events", n)
         finally:
             store.close()

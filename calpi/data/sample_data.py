@@ -6,38 +6,17 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from calpi.data import timeutil
 from calpi.data.event_store import EventStore
 from calpi.data.models import Calendar, Event
 
 log = logging.getLogger("calpi.sample_data")
 
 FAMILY, WORK, SCHOOL, ARCHIVE = "sample:Family", "sample:Work", "sample:School", "sample:Archive"
-
-
-def _system_tz() -> ZoneInfo:
-    # TODO(US-06): use timeutil.display_tz()
-    name = None
-    try:
-        name = Path("/etc/timezone").read_text().strip()
-    except OSError:
-        pass
-    if not name:
-        try:
-            link = os.path.realpath("/etc/localtime")
-            if "zoneinfo/" in link:
-                name = link.split("zoneinfo/", 1)[1]
-        except OSError:
-            pass
-    try:
-        return ZoneInfo(name or "UTC")
-    except Exception:
-        return ZoneInfo("UTC")
 
 
 def sample_calendars() -> list[Calendar]:
@@ -136,8 +115,8 @@ def main(argv=None) -> int:
     a = p.parse_args(argv)
     from calpi import paths
     paths.set_state_dir_override(a.state_dir)
-    tz = _system_tz()
-    today = date.fromisoformat(a.today) if a.today else datetime.now(tz).date()
+    tz = timeutil.display_tz()
+    today = date.fromisoformat(a.today) if a.today else timeutil.today()
     store = EventStore()
     n = load(store, today, tz, clear=a.clear)
     print(f"loaded {n} sample events")
