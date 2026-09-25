@@ -90,7 +90,7 @@ def test_nmcli_error_mapping():
 
 def test_other_parsers():
     assert wifi.parse_radio("enabled\n") and not wifi.parse_radio("disabled\n")
-    assert wifi.parse_saved(fx("saved.txt")) == [{"name": "Home Wifi", "uuid": "11111111-1111-1111-1111-111111111111"}]
+    assert [p["uuid"][0] for p in wifi.parse_saved(fx("saved.txt"))] == ["1", "4"]
     d = wifi.parse_devices(fx("devices.txt"))
     assert d[0] == {"device": "wlan0", "type": "wifi", "state": "connected", "connection": "Home Wifi"}
 
@@ -113,3 +113,60 @@ def test_wifi_module_does_not_import_gi():
     r = subprocess.run([sys.executable, "-c", "import sys, calpi.system.wifi; assert 'gi' not in sys.modules"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+# ---- US-24 ----
+def test_parse_saved_fields():
+    a, b = wifi.parse_saved(fx("saved.txt"))
+    assert (a["name"], a["autoconnect"], a["last_used"], a["active"]) == ("Home Wifi", True, 1700000000, True)
+    assert (b["name"], b["autoconnect"], b["last_used"], b["active"]) == ("preconfigured", False, 0, False)
+    assert wifi.parse_saved("x:u:802-11-wireless\n")[0]["last_used"] == 0   # missing fields
+
+
+def test_sort_saved():
+    mk = lambda u, t, act=False: wifi.SavedWifi(u, u, u, True, t, act)
+    assert [s.uuid for s in wifi.sort_saved([mk("old", 1), mk("new", 9), mk("act", 0, True)])] == ["act", "new", "old"]
+
+
+def test_parse_device_show():
+    d = wifi.parse_device_show(fx("device_show.txt"))
+    assert d == {"connection": "Home Wifi", "ip4": ["192.168.1.23/24"], "gateway": "192.168.1.1",
+                 "dns": ["192.168.1.1", "8.8.8.8"]}
+    assert wifi.strip_prefix("192.168.1.23/24") == "192.168.1.23"
+    e = wifi.parse_device_show("GENERAL.CONNECTION:Cafe\\: Guest\nIP4.ADDRESS[1]:10.0.0.2/8\nIP4.GATEWAY:\nIP4.DNS[1]:fe80\\:\\:1\n")
+    assert e["connection"] == "Cafe: Guest" and e["gateway"] == "" and e["dns"] == ["fe80::1"]
+    assert wifi.parse_device_show("") == {"connection": "", "ip4": [], "gateway": "", "dns": []}
+
+
+def test_active_device_prefers_ethernet():
+    rows = [{"device": "wlan0", "type": "wifi", "state": "connected", "connection": "H"},
+            {"device": "eth0", "type": "ethernet", "state": "connected", "connection": "W"},
+            {"device": "lo", "type": "loopback", "state": "connected (externally)", "connection": "lo"}]
+    assert wifi.active_device(rows)["device"] == "eth0"
+    assert wifi.active_device(rows[:1])["device"] == "wlan0"
+    assert wifi.active_device([{"device": "eth0", "type": "ethernet", "state": "unavailable", "connection": ""}]) is None
+    assert wifi.active_device(wifi.parse_devices(fx("devices.txt")))["device"] == "wlan0"
+
+
+def test_nm_state_text():
+    assert wifi.nm_state_from_text("connected\n") == 70
+    assert wifi.nm_state_from_text("connected (site only)") == 60
+    assert wifi.nm_state_from_text("connected (local only)") == 50
+    assert wifi.nm_state_from_text("disconnected") == 20
+    assert wifi.nm_state_from_text("weird") is None
+
+
+def test_internet_status_truth_table():
+    ok = {"status": "done", "accounts": [{"error": None}]}
+    bad = {"status": "done", "accounts": [{"error": "NETWORK_DOWN"}]}
+    auth = {"status": "done", "accounts": [{"error": "AUTH_FAILED"}]}
+    f = wifi.internet_status
+    assert f(70, ok, 60)[0] == "Working"
+    assert f(70, bad, 60)[0] == "No internet" and "Home" in f(70, bad, 60, "Home")[1]
+    assert f(70, ok, 3600)[0] == "No internet"
+    assert f(70, auth, 3600)[0] == "No internet"
+    assert f(70, None, None)[0] == "Checking…"
+    assert f(60, ok, 10)[0] == f(50, ok, 10)[0] == "No internet"
+    assert f(None, None, None)[0] == "Checking…"
+    assert f(None, ok, 10) == ("Working", None)
+    assert f(None, bad, None)[0] == "No internet"

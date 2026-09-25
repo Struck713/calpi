@@ -223,7 +223,7 @@ def cmd_scan(rescan: str) -> list[str]:
 
 
 def cmd_saved() -> list[str]:
-    return ["nmcli", "-t", "-f", "NAME,UUID,TYPE,AUTOCONNECT,TIMESTAMP", "connection", "show"]
+    return ["nmcli", "-t", "-f", "NAME,UUID,TYPE,AUTOCONNECT,TIMESTAMP,ACTIVE", "connection", "show"]
 
 
 def cmd_connection_ssid(uuid: str) -> list[str]:
@@ -276,13 +276,141 @@ def parse_radio(stdout: str) -> bool:
 
 
 def parse_saved(stdout: str) -> list[dict]:
-    """Wi-Fi profiles: [{name, uuid}] from cmd_saved() output."""
+    """Wi-Fi profiles only (never ethernet/loopback/other) from cmd_saved() output:
+    [{name, uuid, autoconnect, last_used, active}]. Missing trailing fields default sensibly."""
     out = []
     for line in stdout.splitlines():
         f = split_terse(line)
         if len(f) >= 3 and f[2] == "802-11-wireless":
-            out.append({"name": f[0], "uuid": f[1]})
+            out.append({"name": f[0], "uuid": f[1],
+                        "autoconnect": (f[3].strip().lower() == "yes") if len(f) > 3 else True,
+                        "last_used": (_int(f[4], 0) or 0) if len(f) > 4 else 0,
+                        "active": (f[5].strip().lower() == "yes") if len(f) > 5 else False})
     return out
+
+
+@dataclass(frozen=True)
+class SavedWifi:
+    uuid: str
+    name: str
+    ssid: str
+    autoconnect: bool
+    last_used: int
+    active: bool
+
+
+def sort_saved(items) -> list[SavedWifi]:
+    """Active first, then most recently used first, then by SSID."""
+    return sorted(items, key=lambda s: (not s.active, -s.last_used, s.ssid.lower()))
+
+
+def parse_device_status(stdout: str) -> list[dict]:
+    """Alias of parse_devices (DEVICE,TYPE,STATE,CONNECTION)."""
+    return parse_devices(stdout)
+
+
+def strip_prefix(addr: str) -> str:
+    return addr.split("/", 1)[0]
+
+
+def parse_device_show(stdout: str) -> dict:
+    """`nmcli -t -f GENERAL.CONNECTION,IP4.ADDRESS,IP4.GATEWAY,IP4.DNS device show DEV`.
+    Lines are KEY:VALUE with indexed keys (IP4.ADDRESS[1]); split on the FIRST unescaped ':'.
+    -> {"connection": str, "ip4": [addr/prefix], "gateway": str, "dns": [str]}"""
+    res: dict = {"connection": "", "ip4": [], "gateway": "", "dns": []}
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = split_terse(line)
+        key, value = parts[0], ":".join(parts[1:])   # re-join: split_terse unescaped IPv6 colons
+        base = key.split("[", 1)[0]
+        if not value.strip():
+            continue
+        if base == "GENERAL.CONNECTION":
+            res["connection"] = value
+        elif base == "IP4.ADDRESS":
+            res["ip4"].append(value)
+        elif base == "IP4.GATEWAY":
+            res["gateway"] = value
+        elif base == "IP4.DNS":
+            res["dns"].append(value)
+    return res
+
+
+def active_device(rows) -> dict | None:
+    """The connected ethernet/wifi device; ethernet wins when both are connected."""
+    ok = [r for r in rows if r.get("state") == "connected" and r.get("type") in ("ethernet", "wifi")]
+    for kind in ("ethernet", "wifi"):
+        for r in ok:
+            if r["type"] == kind:
+                return r
+    return None
+
+
+def nm_state_from_text(text: str) -> int | None:
+    """`nmcli -t -g STATE general` text -> NMState number (None when unknown)."""
+    t = (text or "").strip().lower()
+    if t == "connected":
+        return 70
+    if t.startswith("connected (site"):
+        return 60
+    if t.startswith("connected (local"):
+        return 50
+    if t == "connecting":
+        return 40
+    if t == "disconnecting":
+        return 30
+    if t == "disconnected":
+        return 20
+    return None
+
+
+def cmd_nm_state() -> list[str]:
+    return ["nmcli", "-t", "-g", "STATE", "general"]
+
+
+def cmd_device_show(dev: str) -> list[str]:
+    return ["nmcli", "-t", "-f", "GENERAL.CONNECTION,IP4.ADDRESS,IP4.GATEWAY,IP4.DNS",
+            "device", "show", dev]
+
+
+INTERNET_WORKING = "Working"
+INTERNET_NONE = "No internet"
+INTERNET_CHECKING = "Checking\u2026"
+RECENT_SYNC_S = 30 * 60
+_NETWORK_ERRORS = {"NETWORK_DOWN", "DNS_FAILED", "TIMEOUT"}
+
+
+def _sync_network_failed(last_result) -> bool:
+    if not last_result:
+        return False
+    errs = [a.get("error") for a in last_result.get("accounts", [])]
+    return bool(errs) and all(e in _NETWORK_ERRORS for e in errs)
+
+
+def internet_status(nm_state, last_result, last_success_age_s, ssid: str | None = None):
+    """D3: (label, hint). No active probing; sync results are the evidence."""
+    where = f"Connected to {ssid}" if ssid else "Connected"
+    hint = f"{where} but calpi can't reach the internet. Check the router."
+    recent = last_success_age_s is not None and last_success_age_s < RECENT_SYNC_S
+    failed = _sync_network_failed(last_result)
+    if nm_state in (50, 60):
+        return INTERNET_NONE, hint
+    if nm_state == 70:
+        if failed:
+            return INTERNET_NONE, hint
+        if recent:
+            return INTERNET_WORKING, None
+        if last_result is None:
+            return INTERNET_CHECKING, None
+        return INTERNET_NONE, hint
+    if nm_state is None:                      # no NetworkManager: sync evidence only
+        if last_result is None and last_success_age_s is None:
+            return INTERNET_CHECKING, None
+        if failed:
+            return INTERNET_NONE, hint
+        return (INTERNET_WORKING, None) if recent else (INTERNET_NONE, hint)
+    return INTERNET_NONE, hint
 
 
 def parse_devices(stdout: str) -> list[dict]:
@@ -298,6 +426,64 @@ def parse_devices(stdout: str) -> list[dict]:
 class ScanResult:
     radio_on: bool
     networks: list[WifiNetwork]
+
+
+class StatusBackend:
+    """Blocking nmcli reads/deletes for the connection status and saved lists (US-24).
+    Call from a worker thread. SSIDs are cached per UUID until invalidate()."""
+
+    def __init__(self):
+        self._ssids: dict[str, str] = {}
+
+    def invalidate(self) -> None:
+        self._ssids.clear()
+
+    def status(self) -> dict:
+        """{"kind": "wifi"|"ethernet"|None, "ssid", "signal", "ip", "gateway", "dns", "nm_state",
+        "ethernet_up"}"""
+        rows = parse_devices(run_nmcli(cmd_devices(), 5))
+        try:
+            nm_state = nm_state_from_text(run_nmcli(cmd_nm_state(), 5))
+        except NmcliError:
+            nm_state = None
+        eth_up = any(r["type"] == "ethernet" and r["state"] == "connected" for r in rows)
+        dev = active_device(rows)
+        info = {"kind": None, "ssid": "", "signal": None, "ip": "", "gateway": "", "dns": [],
+                "nm_state": nm_state, "ethernet_up": eth_up}
+        if dev is None:
+            return info
+        show = parse_device_show(run_nmcli(cmd_device_show(dev["device"]), 8))
+        info.update(kind=dev["type"], ip=strip_prefix(show["ip4"][0]) if show["ip4"] else "",
+                    gateway=show["gateway"], dns=show["dns"])
+        info["ssid"] = dev["connection"] or show["connection"]
+        if dev["type"] == "wifi":
+            try:
+                for r in parse_scan(run_nmcli(cmd_scan("no"), 10)):
+                    if r["in_use"]:
+                        info["ssid"], info["signal"] = r["ssid"], r["signal"]
+                        break
+            except NmcliError:
+                pass
+        return info
+
+    def saved(self) -> list[SavedWifi]:
+        out = []
+        for p in parse_saved(run_nmcli(cmd_saved(), 5)):
+            ssid = self._ssids.get(p["uuid"])
+            if ssid is None:
+                try:
+                    lines = run_nmcli(cmd_connection_ssid(p["uuid"]), 5).splitlines()
+                    ssid = lines[0] if lines and lines[0] else p["name"]
+                except NmcliError:
+                    ssid = p["name"]
+                self._ssids[p["uuid"]] = ssid
+            out.append(SavedWifi(p["uuid"], p["name"], ssid, p["autoconnect"], p["last_used"],
+                                 p["active"]))
+        return sort_saved(out)
+
+    def forget(self, uuid: str) -> None:
+        run_nmcli(cmd_delete(uuid), 15)
+        self.invalidate()
 
 
 class NmcliBackend:

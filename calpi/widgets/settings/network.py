@@ -16,7 +16,7 @@ from calpi.tasks import run_in_thread, safe_callback
 from calpi.widgets.keyboard import make_password_field
 from calpi.widgets.settings.registry import SectionSpec, register_section
 from calpi.widgets.settings.rows import InfoRow, ListPickerRow, SettingsGroup
-from calpi.widgets.util import set_class, set_text_if_changed
+from calpi.widgets.util import set_class, set_text_if_changed, set_visible_if_changed
 
 log = logging.getLogger("calpi.settings.network")
 
@@ -346,27 +346,281 @@ class WifiPicker(Gtk.Box):
             self._toast(msg)
 
 
+STATUS_INTERVAL_S = 10
+NOT_CONNECTED_HINT = "Choose a network from the list below to connect."
+
+
+def make_status_backend():
+    if os.environ.get("CALPI_FAKE_WIFI") == "1":
+        from calpi.widgets.settings.dev_wifi import FakeStatusBackend
+        return FakeStatusBackend()
+    return wifi.StatusBackend()
+
+
+def forget_texts(s: wifi.SavedWifi, only_one: bool) -> tuple[str, str, bool]:
+    """(title, body, is_active_case) for the Forget confirmation (acceptance criterion 4)."""
+    title = f"Forget {s.ssid}?"
+    if s.active or only_one:
+        body = (f"calpi will disconnect now and stay offline until you connect to another "
+                f"network.")
+        if only_one:
+            body += " This is the only saved network."
+        return title, body, True
+    return title, "calpi won't join it automatically any more.", False
+
+
+class ConnectionStatusGroup(SettingsGroup):
+    """Current connection: type/SSID, signal, IP, router, DNS, internet (US-24)."""
+
+    def __init__(self, ctx, backend):
+        super().__init__("Current connection")
+        self.ctx, self.backend = ctx, backend
+        self._busy = False
+        self.info: dict | None = None
+        self.kind = self.add(InfoRow("Connection", "Checking\u2026"))
+        self.hint = Gtk.Label(label="", xalign=0, wrap=True, css_classes=["row-desc"])
+        self.hint.set_visible(False)
+        self.append(self.hint)
+        self.signal = self.add(InfoRow("Signal", ""))
+        self.ip = self.add(InfoRow("IP address", ""))
+        self.gw = self.add(InfoRow("Router", ""))
+        self.dns = self.add(InfoRow("DNS", ""))
+        self.inet = self.add(InfoRow("Internet", wifi.INTERNET_CHECKING))
+        self.inet_hint = Gtk.Label(label="", xalign=0, wrap=True, css_classes=["row-desc"])
+        self.inet_hint.set_visible(False)
+        self.append(self.inet_hint)
+        self.on_info = None           # optional callback(info) after each apply
+
+    def refresh(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+        run_in_thread(self.backend.status, on_done=self._apply, on_error=self._failed,
+                      name="net-status")
+
+    def _failed(self, e):
+        self._busy = False
+        log.warning("connection status failed: %s", e)
+
+    def _internet(self, info):
+        sync = getattr(self.ctx.app, "sync", None)
+        last = getattr(sync, "last_result", None)
+        age = None
+        ok_at = getattr(sync, "last_success_wall", None)
+        if ok_at is not None:
+            try:
+                from calpi.data import timeutil
+                age = max(0.0, (timeutil.now() - ok_at).total_seconds())
+            except Exception:
+                age = None
+        nm = info.get("nm_state")
+        if info["kind"] is None:
+            return wifi.INTERNET_NONE, None
+        return wifi.internet_status(nm, last, age, info.get("ssid") or None)
+
+    def _apply(self, info: dict) -> None:
+        self._busy = False
+        self.info = info
+        kind = info["kind"]
+        if kind is None:
+            self.kind.set_value("Not connected")
+            self.hint.set_label(NOT_CONNECTED_HINT)
+            self.hint.set_visible(True)
+        else:
+            self.hint.set_visible(False)
+            self.kind.set_value("Ethernet" if kind == "ethernet"
+                                else f"Wi-Fi \u00b7 {info['ssid']}" if info["ssid"] else "Wi-Fi")
+        show = kind is not None
+        sig = info.get("signal")
+        set_visible_if_changed(self.signal, kind == "wifi" and sig is not None)
+        if sig is not None:
+            self.signal.set_value(f"{wifi.signal_bars(sig)}  {sig}%")
+        for row, key in ((self.ip, "ip"), (self.gw, "gateway")):
+            set_visible_if_changed(row, show and bool(info.get(key)))
+            row.set_value(info.get(key) or "")
+        dns = ", ".join(info.get("dns") or [])
+        set_visible_if_changed(self.dns, show and bool(dns))
+        self.dns.set_value(dns)
+        label, hint = self._internet(info)
+        self.inet.set_value(label)
+        set_text_if_changed(self.inet_hint, hint or "")
+        set_visible_if_changed(self.inet_hint, bool(hint))
+        set_visible_if_changed(self.inet, True)
+        if self.on_info:
+            try:
+                self.on_info(info)
+            except Exception:
+                log.exception("on_info failed")
+
+
+class SavedNetworksGroup(SettingsGroup):
+    """Saved Wi-Fi profiles with a Forget button each (US-24)."""
+
+    def __init__(self, ctx, backend, status_group, on_changed):
+        super().__init__("Saved networks")
+        self.ctx, self.backend, self.status_group = ctx, backend, status_group
+        self._on_changed = on_changed
+        self._busy = False
+        self._last_key = None
+        self.items: list[wifi.SavedWifi] = []
+        self.empty = Gtk.Label(label="No saved networks", xalign=0, css_classes=["row-desc"])
+        self.append(self.empty)
+
+    def refresh(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+        run_in_thread(self.backend.saved, on_done=self._render, on_error=self._failed,
+                      name="net-saved")
+
+    def _failed(self, e):
+        self._busy = False
+        log.warning("saved networks failed: %s", e)
+
+    def _render(self, items) -> None:
+        self._busy = False
+        self.items = list(items)
+        key = tuple((x.uuid, x.ssid, x.name, x.active, x.autoconnect) for x in items)
+        if key == self._last_key:
+            return
+        self._last_key = key
+        rows = self.rows
+        while (c := rows.get_first_child()) is not None:
+            rows.remove(c)
+        seen: set[str] = set()
+        for x in items:
+            dup = x.ssid in seen
+            seen.add(x.ssid)
+            self.add(self._make_row(x, dup))
+        self.empty.set_visible(not items)
+        self.rows.set_visible(bool(items))
+
+    def _make_row(self, x: wifi.SavedWifi, dup: bool) -> Gtk.Widget:
+        row = Gtk.Box(css_classes=["settings-row"], spacing=24)
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        texts.append(Gtk.Label(label=x.ssid + (" (duplicate)" if dup else ""), xalign=0,
+                               css_classes=["row-title"], wrap=True))
+        notes = []
+        if x.name and x.name != x.ssid:
+            notes.append(f"Profile: {x.name}")
+        if x.active:
+            notes.append("Connected")
+        if not x.autoconnect:
+            notes.append("Won't connect automatically")
+        if notes:
+            texts.append(Gtk.Label(label=" \u00b7 ".join(notes), xalign=0, wrap=True,
+                                   css_classes=["row-desc"]))
+        row.append(texts)
+        b = Gtk.Button(label="Forget", css_classes=["row-button", "destructive"],
+                       valign=Gtk.Align.CENTER)
+        b.connect("clicked", lambda *_: self._forget(x))
+        row.append(b)
+        return row
+
+    def _only_one(self) -> bool:
+        info = self.status_group.info or {}
+        return len(self.items) == 1 and not info.get("ethernet_up")
+
+    def _forget(self, x: wifi.SavedWifi) -> None:
+        title, body, active = forget_texts(x, self._only_one())
+        self.ctx.window.confirm.ask(title, body, "Forget", lambda: self._do_forget(x),
+                                    destructive=True)
+
+    def _toast(self, text):
+        try:
+            self.ctx.app.toast(text)
+        except Exception:
+            log.warning("toast unavailable: %s", text)
+
+    def _do_forget(self, x: wifi.SavedWifi) -> None:
+        def failed(e):
+            log.warning("forget %s failed: %s", x.uuid, e)
+            self._toast(f"Couldn't forget {x.ssid}")
+
+        def done(_r=None):
+            self._toast(f"Forgot {x.ssid}")
+            self._on_changed()
+        run_in_thread(lambda: self.backend.forget(x.uuid), on_done=done, on_error=failed,
+                      name="net-forget")
+
+
 class NetworkSection:
-    def __init__(self, ctx):
+    def __init__(self, ctx, status_backend=None):
         self.ctx = ctx
         self.widget = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        g = SettingsGroup("Connection")
-        self.summary = g.add(InfoRow("Wi-Fi", "Checking…"))
-        self.widget.append(g)
-        self.picker = WifiPicker(ctx, on_connected=self._connected, on_networks=self._networks)
+        self.summary = None
+        self.status_group = self.saved_group = None
+        self._visible = False
+        self._timer = 0
+        self._nm_cb = None
+        wizard = getattr(ctx, "mode", "settings") == "wizard"
+        if wizard:
+            g = SettingsGroup("Connection")
+            self.summary = g.add(InfoRow("Wi-Fi", "Checking\u2026"))
+            self.widget.append(g)
+            self.picker = WifiPicker(ctx, on_connected=self._connected, on_networks=self._networks)
+            self.widget.append(self.picker)
+            return
+        self.backend = status_backend or make_status_backend()
+        self.status_group = ConnectionStatusGroup(ctx, self.backend)
+        self.widget.append(self.status_group)
+        self.picker = WifiPicker(ctx, on_connected=self._connected)
         self.widget.append(self.picker)
+        self.saved_group = SavedNetworksGroup(ctx, self.backend, self.status_group,
+                                              self.after_change)
+        self.widget.append(self.saved_group)
 
     def _networks(self, nets):
         cur = next((n for n in nets if n.in_use), None)
         self.summary.set_value(f"Connected to {cur.ssid}" if cur else "Not connected")
 
     def _connected(self, ssid):
-        self.summary.set_value(f"Connected to {ssid}")
+        if self.summary is not None:
+            self.summary.set_value(f"Connected to {ssid}")
+        else:
+            self.after_change(rescan=False)
+
+    def refresh(self) -> None:
+        if self.status_group is not None:
+            self.status_group.refresh()
+            self.saved_group.refresh()
+
+    def after_change(self, rescan: bool = True) -> None:
+        """After connect/forget: drop the SSID cache and refresh all three groups."""
+        if self.status_group is None:
+            return
+        self.backend.invalidate()
+        self.refresh()
+        if rescan:
+            self.picker.scan("auto")
+
+    def _on_tick(self):
+        if self._visible:
+            self.refresh()          # status only: no wifi rescan here (US-23 owns that cycle)
 
     def on_show(self):
+        self._visible = True
+        self.refresh()
+        if self.status_group is not None and not self._timer:
+            self._timer = GLib.timeout_add_seconds(STATUS_INTERVAL_S,
+                                                   safe_callback(self._on_tick, repeat=True))
+        mon = getattr(self.ctx.app, "network", None)      # US-17 NetworkMonitor, when present
+        cbs = getattr(mon, "callbacks", None)
+        if cbs is not None and self._nm_cb is None and self.status_group is not None:
+            self._nm_cb = lambda *_a: self.refresh()
+            cbs.append(self._nm_cb)
         self.picker.on_show()
 
     def on_hide(self):
+        self._visible = False
+        if self._timer:
+            GLib.source_remove(self._timer)
+            self._timer = 0
+        mon = getattr(self.ctx.app, "network", None)
+        cbs = getattr(mon, "callbacks", None)
+        if cbs is not None and self._nm_cb in cbs:
+            cbs.remove(self._nm_cb)
+        self._nm_cb = None
         self.picker.on_hide()
 
 
