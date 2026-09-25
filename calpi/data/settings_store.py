@@ -64,6 +64,10 @@ def _valid_accounts(v) -> bool:
 
 
 register(Key(K_ACCOUNTS, list, [], _valid_accounts))    # US-14: account records, no secrets
+K_SYNC_WINDOW_BACK = "sync_window_months_back"          # US-15
+K_SYNC_WINDOW_FORWARD = "sync_window_months_forward"
+register(Key(K_SYNC_WINDOW_BACK, int, 2, lambda v: 0 <= v <= 12))
+register(Key(K_SYNC_WINDOW_FORWARD, int, 12, lambda v: 1 <= v <= 36))
 # Later stories append here.
 
 

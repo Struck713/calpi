@@ -130,21 +130,46 @@ class EventStore:
         Duplicate (uid, recurrence_id) identities: the last one wins.
         """
         with db.write_txn(self.conn):
-            unique: dict[tuple[str, str], Event] = {}
-            total = 0
-            for e in events:            # a generator may raise midway: the txn rolls back
-                total += 1
-                unique[(e.uid, e.recurrence_id)] = e
-            if total != len(unique):
-                log.debug("dropped %d duplicate occurrences for %s", total - len(unique), calendar_id)
-            self.conn.execute("DELETE FROM events WHERE calendar_id = ?", (calendar_id,))
-            self.conn.executemany(
-                f"INSERT INTO events({_EVENT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [_event_to_row(e, calendar_id) for e in unique.values()])
+            n = self._replace_events_no_txn(calendar_id, events)
             if window:
                 self.conn.execute("UPDATE calendars SET window_start=?, window_end=? WHERE id=?",
                                   (int(window[0].timestamp()), int(window[1].timestamp()), calendar_id))
+        return n
+
+    def _replace_events_no_txn(self, calendar_id: str, events: Iterable[Event]) -> int:
+        unique: dict[tuple[str, str], Event] = {}
+        total = 0
+        for e in events:            # a generator may raise midway: the txn rolls back
+            total += 1
+            unique[(e.uid, e.recurrence_id)] = e
+        if total != len(unique):
+            log.debug("dropped %d duplicate occurrences for %s", total - len(unique), calendar_id)
+        self.conn.execute("DELETE FROM events WHERE calendar_id = ?", (calendar_id,))
+        self.conn.executemany(
+            f"INSERT INTO events({_EVENT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [_event_to_row(e, calendar_id) for e in unique.values()])
         return len(unique)
+
+    def apply_calendar_sync(self, calendar_id: str, events: Iterable[Event], ctag: str | None,
+                            sync_token: str | None, window: tuple[datetime, datetime]) -> int:
+        """Replace events AND record ctag/token/window in one transaction (US-15 D7)."""
+        with db.write_txn(self.conn):
+            n = self._replace_events_no_txn(calendar_id, events)
+            self.conn.execute(
+                "UPDATE calendars SET ctag=?, sync_token=?, window_start=?, window_end=? WHERE id=?",
+                (ctag, sync_token, int(window[0].timestamp()), int(window[1].timestamp()), calendar_id))
+        return n
+
+    def calendars_for_account(self, account_id: str) -> list[Calendar]:
+        rows = self.conn.execute("SELECT * FROM calendars WHERE account_id = ? ORDER BY id",
+                                 (account_id,))
+        return [_row_to_calendar(r) for r in rows]
+
+    def sync_state(self, calendar_id: str):
+        """(ctag, sync_token, window_start, window_end) as stored; all None if never synced."""
+        r = self.conn.execute("SELECT ctag, sync_token, window_start, window_end FROM calendars "
+                              "WHERE id = ?", (calendar_id,)).fetchone()
+        return (r[0], r[1], r[2], r[3]) if r else (None, None, None, None)
 
     def events_for_days(self, first_day: date, end_day: date, tz: ZoneInfo,
                         include_hidden: bool = False) -> list[Event]:

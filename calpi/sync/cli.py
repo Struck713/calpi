@@ -13,6 +13,7 @@ import getpass
 import logging
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 from calpi.data.accounts import (list_accounts, remove_account, add_or_update_account)
@@ -66,6 +67,76 @@ def _exit_code(e: SyncError) -> int:
     return 1
 
 
+def _month(s: str | None):
+    if not s:
+        return None
+    y, m = s.split("-")
+    return int(y), int(m)
+
+
+def _fetch(args, settings, credentials, state, client) -> int:
+    from calpi.data import db, timeutil
+    from calpi.data.accounts import get_account
+    from calpi.data.event_store import EventStore
+    from calpi.data.settings_store import K_SYNC_WINDOW_BACK, K_SYNC_WINDOW_FORWARD, REGISTRY, K_TIMEZONE
+    from calpi.sync import fetch
+
+    acc = get_account(settings, args.account)
+    if acc is None:
+        print("no such account", file=sys.stderr)
+        return 1
+    secret = credentials.get(acc.id)
+    if secret is None:
+        print("error: no stored password for this account", file=sys.stderr)
+        return 2
+    if K_TIMEZONE in REGISTRY:
+        timeutil.set_display_tz(settings.get(K_TIMEZONE))
+    tz = timeutil.display_tz()
+    extra = None
+    a, b = _month(args.from_month), _month(args.to_month)
+    if a or b:
+        today = timeutil.today()
+        a = a or (today.year, today.month)
+        b = b or a
+        ey, em = fetch._add_months(b[0], b[1], 1)
+        extra = (date(a[0], a[1], 1), date(ey, em, 1))
+    window = fetch.compute_window(timeutil.today(), tz, settings.get(K_SYNC_WINDOW_BACK),
+                                  settings.get(K_SYNC_WINDOW_FORWARD), extra)
+    client = client or _client(args)
+    if args.dry_run:
+        return _dry_run(acc, secret, client, window, tz)
+    store = EventStore(Path(state) / db.DB_NAME if state else None)
+    if args.clear_sample:
+        store.delete_sample_data()
+    res = fetch.sync_account(acc, secret, store, window, force=args.force, client=client, tz=tz)
+    if res.error:
+        print(f"error: {res.error.value}: {res.detail}", file=sys.stderr)
+        return 2 if res.error is ErrorCode.AUTH_FAILED else 1
+    for c in res.calendars:
+        extra_txt = f" {c.error.value}: {c.detail}" if c.error else ""
+        print(f"{c.name}: {c.status} events={c.events} {c.duration_ms}ms{extra_txt}")
+    return 0 if all(c.status != "error" for c in res.calendars) else 1
+
+
+def _dry_run(acc, secret, client, window, tz) -> int:
+    from calpi.sync import fetch
+    from calpi.sync.ical_parse import parse_resources
+    auth = (acc.username, secret)
+    for rc in fetch.list_calendars(client, acc, auth):
+        href = fetch.urljoin(acc.calendar_home_url, rc.href)
+        cid = fetch.calendar_id_for(acc.id, href)
+        try:
+            events, st = parse_resources(fetch._fetch_blobs(client, auth, href, window), cid, window, tz)
+        except SyncError as e:
+            print(f"{rc.name}: error {e.code.value}: {e.detail}")
+            continue
+        print(f"{rc.name}: {len(events)} occurrences from {st.resources} resources ({st})")
+        for e in sorted(events, key=lambda e: str(e.start))[:10]:
+            when = e.start.isoformat() if e.all_day else e.start.astimezone(tz).isoformat(sep=" ")
+            print(f"    {when}  {e.summary}")
+    return 0
+
+
 def main(argv=None, settings: SettingsStore | None = None,
          credentials: CredentialStore | None = None, client: HttpClient | None = None) -> int:
     ap = argparse.ArgumentParser(prog="calpi.sync.cli", description=__doc__,
@@ -80,6 +151,14 @@ def main(argv=None, settings: SettingsStore | None = None,
         p.add_argument("--password-env", metavar="VAR", help="DEV ONLY: read the password from this env var")
         p.add_argument("--dump-dir", help="DEV ONLY: save raw response bodies here (anonymise before sharing)")
     sub.add_parser("list-accounts")
+    f = sub.add_parser("fetch", help="download and store events (or --dry-run to print them)")
+    f.add_argument("--account", required=True)
+    f.add_argument("--force", action="store_true", help="ignore ctags")
+    f.add_argument("--dry-run", action="store_true", help="fetch and parse, do not write")
+    f.add_argument("--from", dest="from_month", metavar="YYYY-MM")
+    f.add_argument("--to", dest="to_month", metavar="YYYY-MM")
+    f.add_argument("--clear-sample", action="store_true", help="delete sample data first")
+    f.add_argument("--dump-dir", help="DEV ONLY: save raw response bodies here")
     r = sub.add_parser("remove-account")
     r.add_argument("--id", required=True)
     args = ap.parse_args(argv)
@@ -99,6 +178,8 @@ def main(argv=None, settings: SettingsStore | None = None,
             ok = remove_account(settings, credentials, args.id)
             print("removed" if ok else "no such account")
             return 0 if ok else 1
+        if args.cmd == "fetch":
+            return _fetch(args, settings, credentials, state, client)
         secret = _password(args)
         d = icloud.discover(args.username, secret, client or _client(args))
         _print_discovery(d)

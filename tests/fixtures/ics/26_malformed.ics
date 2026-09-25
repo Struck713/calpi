@@ -1,0 +1,7 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//calpi test//EN
+BEGIN:VEVENT
+UID:bad1
+SUMMARY:broken
+DTSTART:not-a-date
