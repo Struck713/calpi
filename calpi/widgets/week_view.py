@@ -263,7 +263,7 @@ class WeekView(Gtk.Box):
             return
         t0 = time.perf_counter()
         tz = timeutil.display_tz()
-        cals = self.store.list_calendars(include_hidden=False)
+        cals = self.store.list_calendars(include_hidden=True)   # US-26
         self.colors.update(cals)
         if self._rgb_hash != self.colors.hash:
             self._rgb = {c.id: _rgb(c.color) for c in cals}

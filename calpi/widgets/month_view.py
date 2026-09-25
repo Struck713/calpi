@@ -9,6 +9,7 @@ from typing import Callable
 from gi.repository import Gtk
 
 from calpi.data import formatting, layout, monthmath, timeutil
+from calpi.weather.client import daily_text
 from calpi.widgets.calendar_colors import CalendarColors
 from calpi.widgets.header import Header
 from calpi.widgets.util import set_text_if_changed
@@ -27,6 +28,7 @@ class MonthView(Gtk.Box):
         self.store = None                 # EventStore, set by attach_store (US-07)
         self.colors: CalendarColors | None = None
         self._last_key = None
+        self._forecast = None             # dict[date, Daily] | None (US-41)
         self.month_changed_callbacks: list[Callable[[int, int], None]] = []
         self.header = Header()
         self.switcher = ViewSwitcher("month")          # US-39
@@ -78,6 +80,7 @@ class MonthView(Gtk.Box):
         for i, row in enumerate(self.week_rows):
             row.set_week(dates[i * 7:(i + 1) * 7], month, today)
         self.header.set_title(monthmath.month_title(year, month))
+        self._apply_forecast()
         log.info("month_view: showing %04d-%02d", year, month)
         self._update_nav_sensitivity()
         for cb in list(self.month_changed_callbacks):
@@ -85,6 +88,18 @@ class MonthView(Gtk.Box):
                 cb(year, month)
             except Exception:
                 log.exception("month_changed callback failed")
+
+    def set_forecast(self, forecast) -> None:
+        """US-41: dict[date, Daily] (or None to clear). Only cells whose text changes are touched."""
+        self._forecast = forecast
+        self._apply_forecast()
+
+    def _apply_forecast(self) -> None:
+        fc = self._forecast
+        for row in self.week_rows:
+            for cell in row.cells:
+                d = fc.get(cell.date) if fc and cell.date is not None else None
+                cell.set_forecast(daily_text(d) if d is not None else "")
 
     def _update_nav_sensitivity(self) -> None:
         for btn, value in ((self.btn_prev, self.year > MIN_YEAR or self.month > 1),
@@ -170,7 +185,7 @@ class MonthView(Gtk.Box):
             return
         t0 = time.perf_counter()
         tz = timeutil.display_tz()
-        self.colors.update(self.store.list_calendars(include_hidden=False))
+        self.colors.update(self.store.list_calendars(include_hidden=True))   # US-26: hidden ones keep a class for settings dots
         key = (self.store.revision(), self.year, self.month, tz.key, self.week_start,
                formatting.time_format(), self.colors.hash)
         if not force and key == self._last_key:

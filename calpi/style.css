@@ -26,6 +26,12 @@ window, .screen { background-color: @bg; color: @text; font-family: "DejaVu Sans
 .day-cell.today { box-shadow: inset 0 0 0 3px @accent; }
 .day-cell.today .day-number { background-color: @accent; color: @bg; border-radius: 999px; font-weight: bold; }
 
+/* --- US-41 weather --- */
+.weather-panel  { font-size: 26px; color: @text; min-width: 0; margin-right: 8px; }
+.cell-forecast  { font-size: 18px; color: @text_dim; margin: 8px 4px 0 0; }
+.day-cell.other-month .cell-forecast { opacity: 0.35; }
+.weather-note   { font-size: 22px; color: @text_dim; margin: 8px 8px 16px 8px; }
+
 /* --- US-11 input conventions --- */
 * { transition: none; animation: none; }
 button { min-width: 72px; min-height: 72px; }
@@ -168,3 +174,17 @@ switch slider    { min-width: 52px; min-height: 52px; }
 .guide-step-number { font-size: 26px; font-weight: bold; min-width: 44px; min-height: 44px;
                      border-radius: 22px; background-color: @accent; color: @bg; }
 .guide-caption     { font-size: 24px; color: @text_dim; }
+
+/* US-40 agenda */
+.agenda-list       { background: transparent; }
+.agenda-day-heading { font-size: 30px; color: @accent; padding: 24px 48px 8px 48px; }
+.agenda-row        { min-height: 88px; padding: 12px 48px; }
+.agenda-row.next   { background-color: alpha(@accent, 0.08); }
+.agenda-row.tentative .agenda-title { font-style: italic; color: @text_dim; }
+.bar.agenda-dot    { min-width: 16px; min-height: 16px; border-radius: 8px; margin: 0 24px 0 0; padding: 0; }
+.agenda-time-col   { min-width: 260px; }
+.agenda-time       { font-size: 26px; color: @text_dim; }
+.agenda-title      { font-size: 30px; }
+.agenda-sub        { font-size: 22px; color: @text_dim; }
+.agenda-now-tag    { font-size: 18px; color: @bg; background-color: @accent; border-radius: 8px; padding: 0 10px; font-weight: bold; margin-top: 4px; }
+.agenda-more-label { font-size: 24px; color: @text_dim; padding: 24px 48px; }

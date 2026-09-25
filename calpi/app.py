@@ -23,6 +23,7 @@ from calpi.widgets.settings.shell import SettingsScreen
 from calpi.widgets.month_view import MonthView
 from calpi.widgets.view_switcher import screen_for, view_for_screen
 from calpi.widgets.week_view import WeekView
+from calpi.widgets.agenda_view import AgendaView
 from calpi.widgets.util import add_style_provider
 
 log = logging.getLogger("calpi.app")
@@ -116,6 +117,9 @@ class MainWindow(Gtk.ApplicationWindow):
         self.week_view = WeekView(week_start=app.week_start)                # US-39
         self.week_view.attach_store(app.store, self.month_view.colors)
         self.navigator.add("week", self.week_view)
+        self.agenda_view = AgendaView()                                     # US-40
+        self.agenda_view.attach_store(app.store, self.month_view.colors)
+        self.navigator.add("agenda", self.agenda_view)
         app.clock.subscribe_day_changed(self._on_day_changed)
         self.navigator.reset(self._default_screen(app))
         if os.environ.get("CALPI_DEV_OSK") == "1":     # dev only (US-21)
@@ -126,6 +130,10 @@ class MainWindow(Gtk.ApplicationWindow):
         self._return_handle = self.inactivity.add_idle_callback(
             self._return_seconds(), self._on_idle_return)
         self._wire_return_setting(app)
+        # US-30: the wake catcher must be the LAST overlay added (topmost). Add new overlays above.
+        from calpi.dimming import create_controller
+        app.dimming = create_controller(app, self)
+        self.wake_catcher = app.dimming.catcher
         if windowed:
             self.set_default_size(1920, 1080)
             self._install_dev_shortcuts()
@@ -136,6 +144,7 @@ class MainWindow(Gtk.ApplicationWindow):
         """Called after a sync/settings change (US-16, US-26, US-28): refresh what is showing."""
         self.month_view.reload()
         self.week_view.reload()
+        self.agenda_view.reload()
         self.day_detail.reload()
 
     def _apply_dim(self, alpha: float) -> None:
@@ -166,6 +175,7 @@ class MainWindow(Gtk.ApplicationWindow):
             wv.show_week(new)               # was showing the current week: follow midnight
         else:
             wv.refresh_today()
+        self.agenda_view.refresh_today()
         mv = self.month_view
         was_current = (mv.year, mv.month) == (old.year, old.month)
         if was_current and (new.year, new.month) != (old.year, old.month):
@@ -242,7 +252,10 @@ class CalpiApp(Gtk.Application):
         self.store = None               # EventStore, created in _on_activate (US-07)
         self.calendar_colors = None     # CalendarColors, shared with later views (US-07)
         self.credentials = None         # CredentialStore, created in _on_activate (US-13)
+        self.dimming = None             # DimController, created with the window (US-30)
         self.safe_mode = False          # US-12: crash loop detected; extras/auto-sync must check it
+        self.sync = None                # SyncEngine, created in _on_activate (US-16)
+        self.weather = None             # WeatherService, created in _on_activate (US-41)
         if not hasattr(self, "startup_notices"):
             self.startup_notices: list[str] = []
         self.connect("activate", self._on_activate)
@@ -282,6 +295,8 @@ class CalpiApp(Gtk.Application):
         self._wire_regional_settings()
         self.window.present()
         self._setup_recovery()
+        self._setup_sync()
+        self._setup_weather()
         log.info("calpi ready version=%s build=%s state_dir=%s renderer=%s",
                  __version__, _build_stamp(), paths.state_dir(),
                  os.environ.get("GSK_RENDERER"))
@@ -378,6 +393,34 @@ class CalpiApp(Gtk.Application):
         crashguard.mark_stable()
         log.info("crashguard: stable, start counter cleared")
 
+    def _setup_sync(self) -> None:
+        """US-16: the engine (worker process launcher), the header indicator, the first schedule."""
+        from calpi.sync_engine import SyncEngine
+        from calpi.widgets.sync_indicator import SyncIndicator
+        self.sync = SyncEngine(self)
+        self.sync.result_callbacks.append(self.reconcile_accounts)      # US-25 D5
+        self.window.month_view.header.end_slot.prepend(SyncIndicator(self.sync, self.clock))
+        self.sync.start()                                               # no-op in safe mode
+
+    def _setup_weather(self) -> None:
+        """US-41: forecast service (off by default), header panel, day-cell forecasts."""
+        from calpi.weather.service import WeatherService
+        from calpi.widgets.weather_panel import WeatherPanel
+        self.weather = WeatherService(self)
+        mv = self.window.month_view
+        mv.header.end_slot.prepend(WeatherPanel(self.weather, self.clock))
+        self.weather.callbacks.append(self._on_weather)
+        self.weather.start()               # inactive in safe mode / when disabled
+
+    def _on_weather(self, service) -> None:
+        fc = service.forecast()
+        self.window.month_view.set_forecast(fc.daily if fc is not None else None)
+
+    def on_data_changed(self) -> None:
+        """After a sync (or anything that changed stored data): reload what is showing."""
+        if self.window is not None:
+            self.window.on_data_changed()
+
     def reconcile_accounts(self, *_a) -> None:
         """US-25 D5: drop calendars of accounts that are no longer configured. Cheap; safe to call
         after every sync result (register as a sync.result_callbacks subscriber)."""
@@ -391,6 +434,13 @@ class CalpiApp(Gtk.Application):
             log.info("reconciled %d orphaned calendar(s)", n)
             if self.window is not None and hasattr(self.window, "month_view"):
                 self.window.month_view.reload(force=True)
+
+    def on_calendars_changed(self) -> None:
+        """After any calendar override change (US-26): regenerate colours, refresh every view."""
+        if self.window is None or self.store is None:
+            return
+        self.calendar_colors.update(self.store.list_calendars(include_hidden=True))
+        self.window.on_data_changed()
 
     def toast(self, text: str, seconds: float = 4) -> None:
         """Show a short bottom-centre message (US-22)."""

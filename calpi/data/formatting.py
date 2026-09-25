@@ -64,7 +64,9 @@ def relative_luminance(color: str) -> float:
 
 def contrast_text(color: str) -> str:
     """Text colour to draw on a background of the given colour (D6)."""
-    return "#0b0e11" if relative_luminance(color) > 0.45 else "#ffffff"
+    # Pick whichever of the two gives the higher WCAG contrast (US-26: crossover at L ~= 0.18;
+    # the old 0.45 cut-off put white text on mid-tone colours at ~2.7:1).
+    return "#0b0e11" if relative_luminance(color) > 0.18 else "#ffffff"
 
 
 # --- day detail texts (US-09) -------------------------------------------------

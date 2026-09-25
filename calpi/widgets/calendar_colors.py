@@ -20,8 +20,18 @@ def load_css(provider: Gtk.CssProvider, css: str) -> None:
         provider.load_from_data(css, -1)
 
 
+def swatch_css() -> str:
+    """One rule per palette colour: `.swatch-N` (US-26; palette.py stays the single source)."""
+    from calpi.data.palette import PALETTE
+    return "\n".join(f".swatch-{i} {{ background-image: none; background-color: {c}; "
+                     f"color: {contrast_text(c)}; }}" for i, (c, _n) in enumerate(PALETTE))
+
+
 class CalendarColors:
     def __init__(self):
+        self._swatches = Gtk.CssProvider()
+        load_css(self._swatches, swatch_css())
+        add_style_provider(self._swatches, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self._provider = Gtk.CssProvider()
         add_style_provider(self._provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
         self._classes: dict[str, str] = {}
@@ -40,6 +50,7 @@ class CalendarColors:
             self._classes[cid] = cls
             css.append(f".bar.{cls} {{ background-color: {color}; color: {contrast_text(color)}; }}")
             css.append(f".line.{cls} .dot {{ background-color: {color}; }}")
+            css.append(f".cal-dot.{cls} {{ background-color: {color}; }}")     # US-26 settings dots
         load_css(self._provider, "\n".join(css))
         return True
 
