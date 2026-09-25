@@ -7,5 +7,8 @@
   },
   "remoteUser": "vscode",
   "postCreateCommand": "sudo apt-get update && grep -hvE '^\\s*(#|$)' deps/apt-runtime.txt deps/apt-dev.txt | sed 's/#.*//' | xargs sudo apt-get install -y --no-install-recommends",
-  "forwardPorts": [8085]
+  "forwardPorts": [8085],
+  "runArgs": [
+    "--network=host"
+  ]
 }
