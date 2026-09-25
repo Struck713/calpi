@@ -1,0 +1,38 @@
+[Unit]
+Description=calpi kiosk (cage + GTK app) on tty1
+After=systemd-user-sessions.service plymouth-quit-wait.service network-online.target
+Wants=network-online.target dbus.socket systemd-logind.service
+After=dbus.socket systemd-logind.service
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+ConditionPathExists=/dev/tty1
+# Give up restarting only if it crash-loops badly
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=kiosk
+WorkingDirectory=/opt/calpi
+# -d: no client-side decorations
+ExecStart=/usr/bin/cage -d -- /usr/bin/python3 /opt/calpi/run.py
+Environment=GSK_RENDERER=cairo
+Environment=GTK_A11Y=none
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+
+# Real login session on tty1 so logind hands the seat (DRM/input) to cage
+PAMName=calpi-kiosk
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+
+[Install]
+WantedBy=graphical.target
